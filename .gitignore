@@ -1,0 +1,8 @@
+node_modules/
+family_tree.db
+family_tree.db-shm
+family_tree.db-wal
+public/uploads/*
+!public/uploads/.gitkeep
+
+.env

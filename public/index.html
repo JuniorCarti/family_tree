@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lineage — Family Tree</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body>
+  <div id="authScreen" class="auth-wrapper hidden">
+    <div class="modal" style="width: 360px;">
+      <div class="modal-header"
+        style="justify-content: center; border-bottom: 1px solid var(--card-edge); padding-bottom: 16px;">
+        <h3 id="authTitle" style="font-size: 24px;">Sign In to Lineage</h3>
+      </div>
+      <form id="authForm" style="padding: 24px 20px;">
+        <div id="authError" class="hidden"
+          style="color: #a13a3a; margin-bottom: 14px; font-size: 13px; text-align: center; background: #faeaea; padding: 8px; border-radius: 6px;">
+        </div>
+
+        <div class="field-row" style="margin-bottom: 16px;">
+          <label>Email</label>
+          <input type="email" id="authEmail" required />
+        </div>
+
+        <div class="field-row" style="margin-bottom: 16px;">
+          <label>Password</label>
+          <input type="password" id="authPassword" required />
+        </div>
+
+        <div class="field-row hidden" id="authFamilyNameRow" style="margin-bottom: 24px;">
+          <label>Family Tree Name</label>
+          <input type="text" id="authFamilyName" placeholder="e.g. The Smith Family" />
+        </div>
+
+        <button type="submit" class="btn btn-primary"
+          style="width: 100%; margin-top: 10px; padding: 12px; font-size: 15px;" id="authSubmitBtn">Sign In</button>
+
+        <div style="text-align: center; margin-top: 20px; font-size: 13px;">
+          <a href="#" id="authToggleLink" style="color: var(--gold-deep); font-weight: 500;">Don't have an account? Sign
+            up.</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="app" class="hidden">
+
+    <!-- ============ Top Bar ============ -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="seal" aria-hidden="true">
+          <svg viewBox="0 0 40 40" width="30" height="30">
+            <circle cx="20" cy="20" r="18" fill="none" stroke="currentColor" stroke-width="1.4" />
+            <circle cx="20" cy="20" r="13" fill="none" stroke="currentColor" stroke-width="0.8" />
+            <path d="M20 9 L22.5 16.5 L30 16.5 L23.7 21 L26 28.5 L20 24 L14 28.5 L16.3 21 L10 16.5 L17.5 16.5 Z"
+              fill="currentColor" opacity="0.9" />
+          </svg>
+        </span>
+        <div class="brand-text">
+          <input id="treeName" class="tree-name-input" value="My Family Tree" spellcheck="false" />
+          <span class="brand-sub" id="personCount">0 people</span>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <div class="search-wrap">
+          <input id="searchInput" type="text" placeholder="Find a person…" autocomplete="off" />
+          <div id="searchResults" class="search-results hidden"></div>
+        </div>
+        <button class="btn btn-ghost" id="zoomOutBtn" title="Zoom out">−</button>
+        <button class="btn btn-ghost" id="zoomInBtn" title="Zoom in">+</button>
+        <button class="btn btn-ghost" id="resetViewBtn" title="Reset view">Reset</button>
+        <button class="btn btn-primary" id="addPersonBtn">+ Add person</button>
+        <button class="btn btn-ghost" id="mergeBtn" style="margin-left: 12px;">Find Duplicates</button>
+        <button class="btn btn-ghost" id="logoutBtn" style="margin-left: 12px;">Log out</button>
+      </div>
+    </header>
+
+    <!-- ============ Canvas ============ -->
+    <main class="canvas-wrap" id="canvasWrap">
+      <div id="emptyState" class="empty-state hidden">
+        <div class="empty-card">
+          <span class="empty-glyph">✎</span>
+          <h2>Start your lineage</h2>
+          <p>Add the first person — yourself, a parent, or the earliest ancestor you know of — then build outward with
+            parents, spouses, and children.</p>
+          <button class="btn btn-primary" id="emptyAddBtn">+ Add the first person</button>
+        </div>
+      </div>
+      <svg id="treeSvg" width="100%" height="100%"></svg>
+      <!-- Relationship line legend -->
+      <div id="relLegend"
+        style="position:absolute;bottom:16px;left:16px;background:rgba(251,247,236,0.92);border:1px solid #d9c9a3;border-radius:10px;padding:10px 14px;font-size:11.5px;font-family:'Inter',sans-serif;color:#33261c;z-index:4;line-height:1.9;pointer-events:none;">
+        <div
+          style="font-weight:700;margin-bottom:4px;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;color:#8f6526;text-transform:uppercase;">
+          Line Legend</div>
+        <div><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
+            <line x1="0" y1="2" x2="28" y2="2" stroke="#b3a077" stroke-width="1.8" />
+          </svg>Parent / Child</div>
+        <div><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
+            <line x1="0" y1="2" x2="28" y2="2" stroke="#b8863b" stroke-width="2.4" />
+          </svg>Spouse</div>
+        <div><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
+            <line x1="0" y1="2" x2="28" y2="2" stroke="#5b8dd9" stroke-width="2" stroke-dasharray="8,5" />
+          </svg>Sibling</div>
+        <div><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
+            <line x1="0" y1="2" x2="28" y2="2" stroke="#8b5cf6" stroke-width="2" stroke-dasharray="10,4" />
+          </svg>Grandparent / Grandchild</div>
+        <div><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
+            <line x1="0" y1="2" x2="28" y2="2" stroke="#ec4899" stroke-width="1.8" stroke-dasharray="6,4,2,4" />
+          </svg>Aunt / Uncle / Niece / Nephew</div>
+        <div><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
+            <line x1="0" y1="2" x2="28" y2="2" stroke="#14b8a6" stroke-width="1.8" stroke-dasharray="5,5" />
+          </svg>Cousin</div>
+        <div><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
+            <line x1="0" y1="2" x2="28" y2="2" stroke="#94a3b8" stroke-width="1.8" stroke-dasharray="4,6" />
+          </svg>Other Relative</div>
+      </div>
+    </main>
+
+    <!-- ============ Side Detail Panel ============ -->
+    <aside class="side-panel hidden" id="sidePanel">
+      <button class="side-panel-close" id="closePanelBtn">×</button>
+      <div id="sidePanelContent"></div>
+    </aside>
+
+  </div>
+
+  <!-- ============ Add / Edit Person Modal ============ -->
+  <div class="modal-overlay hidden" id="personModalOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="personModalTitle">Add a person</h3>
+        <button class="modal-close" id="personModalClose">×</button>
+      </div>
+      <form id="personForm">
+        <div id="existingPersonSearchSection" class="field-row hidden" style="margin-bottom: 20px;">
+          <label>Search existing person to link (optional)</label>
+          <div class="search-wrap" style="position: relative;">
+            <input type="text" id="existingPersonSearchInput" placeholder="Name..." autocomplete="off">
+            <div id="existingPersonSearchResults" class="search-results hidden"
+              style="top: 100%; left: 0; right: 0; width: 100%; z-index: 10;"></div>
+          </div>
+          <div style="font-size: 13px; color: var(--ink-soft); margin-top: 5px;">Or fill the details below to create a
+            new person.</div>
+        </div>
+
+        <div id="selectedExistingPersonView" class="hidden"
+          style="margin-bottom: 20px; padding: 12px; border: 1px solid var(--gold-deep); border-radius: 8px; background: var(--parchment);">
+          <div style="font-weight: 500;" id="selectedExistingName"></div>
+          <div style="font-size: 13px; color: var(--ink-soft);" id="selectedExistingDetails"></div>
+          <button type="button" class="btn btn-ghost" id="clearSelectedBtn"
+            style="margin-top: 10px; font-size: 12px; padding: 4px 8px;">× Cancel selection</button>
+        </div>
+
+        <div id="newPersonFields">
+          <div class="photo-upload-row">
+            <label class="photo-drop" id="photoDrop">
+              <img id="photoPreview" class="hidden" alt="" />
+              <span id="photoPlaceholder">＋<br />Photo</span>
+              <input type="file" id="photoInput" accept="image/*" hidden />
+            </label>
+            <div class="name-fields">
+              <div class="field-row">
+                <label>First name *</label>
+                <input type="text" id="f_first_name" required />
+              </div>
+              <div class="field-row">
+                <label>Last name</label>
+                <input type="text" id="f_last_name" />
+              </div>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <div class="field-row">
+              <label>Maiden name</label>
+              <input type="text" id="f_maiden_name" />
+            </div>
+            <div class="field-row">
+              <label>Gender</label>
+              <select id="f_gender">
+                <option value="unknown">Unspecified</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="field-row">
+              <label>Born</label>
+              <input type="date" id="f_birth_date" />
+            </div>
+            <div class="field-row">
+              <label>Died</label>
+              <input type="date" id="f_death_date" />
+            </div>
+            <div class="field-row span-2">
+              <label>Birthplace</label>
+              <input type="text" id="f_birth_place" placeholder="City, Country" />
+            </div>
+            <div class="field-row span-2">
+              <label>Notes</label>
+              <textarea id="f_notes" rows="2"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div id="relationSection" class="relation-section">
+          <label>Connect to an existing person (optional)</label>
+          <div class="relation-row">
+            <select id="f_relation_type">
+              <option value="">Select relationship...</option>
+              <option value="child_of">Child of…</option>
+              <option value="parent_of">Parent of…</option>
+              <option value="spouse_of">Spouse / partner of…</option>
+              <option value="sibling_of">Sibling of…</option>
+              <option value="grandparent_of">Grandparent of…</option>
+              <option value="grandchild_of">Grandchild of…</option>
+              <option value="relative_of">Relative of…</option>
+            </select>
+            <select id="f_relation_person">
+              <option value="">Select a person…</option>
+            </select>
+          </div>
+
+          <div id="relativeLabelRow" class="relation-row hidden" style="margin-top: 8px;">
+            <input type="text" id="f_relation_label" placeholder="Describe relation (e.g. Cousin, Step-brother)"
+              style="flex: 1; font-size: 13px; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--card-edge); background: var(--parchment);" />
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-text" id="deletePersonBtn">Delete person</button>
+          <div class="modal-footer-right">
+            <button type="button" class="btn btn-ghost" id="cancelPersonBtn">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="savePersonBtn">Save</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ Duplicates Modal ============ -->
+  <div class="modal-overlay hidden" id="duplicatesModalOverlay">
+    <div class="modal" style="width: 650px; max-width: 90vw; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-header">
+        <h3>Merge Duplicates</h3>
+        <button class="modal-close" id="duplicatesModalClose">×</button>
+      </div>
+      <div id="duplicatesContent" style="padding: 10px 0;">
+        <p style="text-align: center; color: var(--ink-soft); padding: 20px;">Loading...</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+
+</html>
