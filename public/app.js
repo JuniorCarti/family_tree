@@ -442,7 +442,7 @@ function render() {
       const a = layout.personPos.get(r.person1_id);
       const b = layout.personPos.get(r.person2_id);
       if (a && b) {
-        drawLine(connLayer, a.x + a.w / 2, a.y + a.h / 2, b.x + b.w / 2, b.y + b.h / 2, r.type);
+        drawArc(connLayer, a.x + a.w / 2, a.y + a.h / 2, b.x + b.w / 2, b.y + b.h / 2, r.type);
       }
     }
   }
@@ -495,6 +495,29 @@ const REL_STYLE = {
   cousin: { stroke: '#14b8a6', width: 1.8, dash: '5,5' },
   relative: { stroke: '#94a3b8', width: 1.8, dash: '4,6' },
 };
+
+function drawArc(layer, x1, y1, x2, y2, kind) {
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+
+  // Decide how far up/down the arc should bow based on horizontal distance
+  const dist = Math.abs(x1 - x2);
+  const midX = (x1 + x2) / 2;
+  // If they are on the same generation (y is close), arc above or below
+  // For larger trees, just arc upwards heavily to avoid the generation below
+  const bow = Math.min(dist * 0.4, 300); // the wider they are, the higher the arc, capped at 300px
+
+  const cy = Math.min(y1, y2) - bow - 30; // Control point is higher than both
+
+  const d = `M ${x1} ${y1} Q ${midX} ${cy} ${x2} ${y2}`;
+  path.setAttribute('d', d);
+  path.setAttribute('fill', 'none');
+
+  const s = REL_STYLE[kind] || REL_STYLE.relative;
+  path.setAttribute('stroke', s.stroke);
+  path.setAttribute('stroke-width', s.width);
+  if (s.dash) path.setAttribute('stroke-dasharray', s.dash);
+  layer.appendChild(path);
+}
 
 function drawLine(layer, x1, y1, x2, y2, kind) {
   const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -632,7 +655,11 @@ function openSidePanel(id) {
   $('#focusPersonBtn').addEventListener('click', () => centerOnPerson(id));
 
   panel.querySelectorAll('.rel-name').forEach((el) => {
-    el.addEventListener('click', () => selectPerson(Number(el.dataset.id)));
+    el.addEventListener('click', () => {
+      const targetId = Number(el.dataset.id);
+      selectPerson(targetId);
+      centerOnPerson(targetId);
+    });
   });
   panel.querySelectorAll('.rel-remove').forEach((el) => {
     el.addEventListener('click', async () => {
@@ -965,68 +992,73 @@ $('#personForm').addEventListener('submit', async (e) => {
 
   let personId = modalContext.editingId;
 
-  if (modalContext.selectedExistingId) {
-    // Just linking an existing person
-    personId = modalContext.selectedExistingId;
-  } else if (!modalContext.editingId) {
-    // Creating NEW person
-    const payload = {
-      first_name: $('#f_first_name').value.trim(),
-      last_name: $('#f_last_name').value.trim(),
-      maiden_name: $('#f_maiden_name').value.trim(),
-      gender: $('#f_gender').value,
-      birth_date: $('#f_birth_date').value || null,
-      death_date: $('#f_death_date').value || null,
-      birth_place: $('#f_birth_place').value.trim() || null,
-      notes: $('#f_notes').value.trim() || null,
-      photo_url: $('#photoPreview').dataset.url || null,
-    };
-    if (!payload.first_name) return;
-    const person = await api('/persons', { method: 'POST', body: JSON.stringify(payload) });
-    personId = person.id;
-  } else {
-    // Editing existing person
-    const payload = {
-      first_name: $('#f_first_name').value.trim(),
-      last_name: $('#f_last_name').value.trim(),
-      maiden_name: $('#f_maiden_name').value.trim(),
-      gender: $('#f_gender').value,
-      birth_date: $('#f_birth_date').value || null,
-      death_date: $('#f_death_date').value || null,
-      birth_place: $('#f_birth_place').value.trim() || null,
-      notes: $('#f_notes').value.trim() || null,
-      photo_url: $('#photoPreview').dataset.url || null,
-    };
-    if (!payload.first_name) return;
-    await api(`/persons/${personId}`, { method: 'PUT', body: JSON.stringify(payload) });
-  }
+  try {
+    if (modalContext.selectedExistingId) {
+      // Just linking an existing person
+      personId = modalContext.selectedExistingId;
+    } else if (!modalContext.editingId) {
+      // Creating NEW person
+      const payload = {
+        first_name: $('#f_first_name').value.trim(),
+        last_name: $('#f_last_name').value.trim(),
+        maiden_name: $('#f_maiden_name').value.trim(),
+        gender: $('#f_gender').value,
+        birth_date: $('#f_birth_date').value || null,
+        death_date: $('#f_death_date').value || null,
+        birth_place: $('#f_birth_place').value.trim() || null,
+        notes: $('#f_notes').value.trim() || null,
+        photo_url: $('#photoPreview').dataset.url || null,
+      };
+      if (!payload.first_name) return;
+      const person = await api('/persons', { method: 'POST', body: JSON.stringify(payload) });
+      personId = person.id;
+    } else {
+      // Editing existing person
+      const payload = {
+        first_name: $('#f_first_name').value.trim(),
+        last_name: $('#f_last_name').value.trim(),
+        maiden_name: $('#f_maiden_name').value.trim(),
+        gender: $('#f_gender').value,
+        birth_date: $('#f_birth_date').value || null,
+        death_date: $('#f_death_date').value || null,
+        birth_place: $('#f_birth_place').value.trim() || null,
+        notes: $('#f_notes').value.trim() || null,
+        photo_url: $('#photoPreview').dataset.url || null,
+      };
+      if (!payload.first_name) return;
+      await api(`/persons/${personId}`, { method: 'PUT', body: JSON.stringify(payload) });
+    }
 
-  // Create relationship if requested (only if not editing)
-  if (!modalContext.editingId) {
-    const relatedId = Number(relatedVal);
-    if (relType && relatedId) {
-      if (relType === 'child_of') {
-        await api('/relationships', { method: 'POST', body: JSON.stringify({ type: 'parent', person1_id: relatedId, person2_id: personId }) });
-      } else if (relType === 'parent_of') {
-        await api('/relationships', { method: 'POST', body: JSON.stringify({ type: 'parent', person1_id: personId, person2_id: relatedId }) });
-      } else if (relType === 'spouse_of') {
-        await api('/relationships', { method: 'POST', body: JSON.stringify({ type: 'spouse', person1_id: personId, person2_id: relatedId }) });
-      } else if (relType === 'sibling_of') {
-        await api('/relationships', { method: 'POST', body: JSON.stringify({ type: 'sibling', person1_id: personId, person2_id: relatedId }) });
-      } else if (relType === 'grandparent_of') {
-        await api('/relationships', { method: 'POST', body: JSON.stringify({ type: 'grandparent', person1_id: personId, person2_id: relatedId }) });
-      } else if (relType === 'grandchild_of') {
-        await api('/relationships', { method: 'POST', body: JSON.stringify({ type: 'grandchild', person1_id: personId, person2_id: relatedId }) });
-      } else if (relType === 'relative_of') {
-        const label = $('#f_relation_label').value.trim() || null;
-        await api('/relationships', { method: 'POST', body: JSON.stringify({ type: 'relative', person1_id: personId, person2_id: relatedId, label }) });
+    // Create relationship if requested (only if not editing)
+    if (!modalContext.editingId) {
+      const relatedId = Number(relatedVal);
+      if (relType && relatedId) {
+        if (relType === 'child_of') {
+          await api('/relationships', { method: 'POST', body: JSON.stringify({ type: 'parent', person1_id: relatedId, person2_id: personId }) });
+        } else if (relType === 'parent_of') {
+          await api('/relationships', { method: 'POST', body: JSON.stringify({ type: 'parent', person1_id: personId, person2_id: relatedId }) });
+        } else if (relType === 'spouse_of') {
+          await api('/relationships', { method: 'POST', body: JSON.stringify({ type: 'spouse', person1_id: personId, person2_id: relatedId }) });
+        } else if (relType === 'sibling_of') {
+          await api('/relationships', { method: 'POST', body: JSON.stringify({ type: 'sibling', person1_id: personId, person2_id: relatedId }) });
+        } else if (relType === 'grandparent_of') {
+          await api('/relationships', { method: 'POST', body: JSON.stringify({ type: 'grandparent', person1_id: personId, person2_id: relatedId }) });
+        } else if (relType === 'grandchild_of') {
+          await api('/relationships', { method: 'POST', body: JSON.stringify({ type: 'grandchild', person1_id: personId, person2_id: relatedId }) });
+        } else if (relType === 'relative_of') {
+          const label = $('#f_relation_label').value.trim() || null;
+          await api('/relationships', { method: 'POST', body: JSON.stringify({ type: 'relative', person1_id: personId, person2_id: relatedId, label }) });
+        }
       }
     }
-  }
 
-  closePersonModal();
-  await loadTree();
-  selectPerson(personId);
+    closePersonModal();
+    await loadTree();
+    selectPerson(personId);
+    centerOnPerson(personId);
+  } catch (err) {
+    alert(err.message || 'There was an error saving the person. Please try again.');
+  }
 });
 
 $('#deletePersonBtn').addEventListener('click', async () => {
@@ -1057,14 +1089,83 @@ $('#authToggleLink').addEventListener('click', (e) => {
   $('#authToggleLink').textContent = isLoginMode ? "Don't have an account? Sign up." : 'Already have an account? Sign in.';
   $('#authFamilyNameRow').classList.toggle('hidden', isLoginMode);
   $('#authFamilyName').required = !isLoginMode;
+
+  $('#authConfirmPasswordRow').classList.toggle('hidden', isLoginMode);
+  $('#authConfirmPassword').required = !isLoginMode;
+  $('#authForgotPasswordWrap').classList.toggle('hidden', !isLoginMode);
+
+  $('#authEmailLabel').textContent = isLoginMode ? 'Email or Family Name' : 'Email';
+
   $('#authError').classList.add('hidden');
+});
+
+function togglePassword(inputId, btnId) {
+  const input = $('#' + inputId);
+  const btn = $('#' + btnId);
+  btn.addEventListener('click', () => {
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.innerHTML = '<span style="font-size:12px;opacity:0.7">HIDE</span>';
+    } else {
+      input.type = 'password';
+      btn.innerHTML = '👁';
+    }
+  });
+}
+togglePassword('authPassword', 'togglePasswordBtn');
+togglePassword('authConfirmPassword', 'toggleConfirmPasswordBtn');
+togglePassword('resetPassword', 'toggleResetPasswordBtn');
+
+$('#authForgotPasswordLink').addEventListener('click', (e) => {
+  e.preventDefault();
+  $('#resetModalOverlay').classList.remove('hidden');
+  $('#resetMessage').classList.add('hidden');
+  $('#resetIdentifier').value = $('#authEmail').value;
+  $('#resetPassword').value = '';
+});
+
+$('#resetModalClose').addEventListener('click', () => {
+  $('#resetModalOverlay').classList.add('hidden');
+});
+
+$('#resetForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const identifier = $('#resetIdentifier').value.trim();
+  const new_password = $('#resetPassword').value;
+
+  try {
+    $('#resetSubmitBtn').disabled = true;
+    await api('/auth/reset-password', { method: 'POST', body: JSON.stringify({ identifier, new_password }) });
+    $('#resetMessage').classList.remove('hidden');
+    $('#resetMessage').style.backgroundColor = '#e1f5e8';
+    $('#resetMessage').style.color = '#2d6a4f';
+    $('#resetMessage').textContent = 'Password reset successfully! You can now sign in.';
+    setTimeout(() => {
+      $('#resetModalOverlay').classList.add('hidden');
+    }, 2500);
+  } catch (err) {
+    $('#resetMessage').classList.remove('hidden');
+    $('#resetMessage').style.backgroundColor = '#faeaea';
+    $('#resetMessage').style.color = '#a13a3a';
+    $('#resetMessage').textContent = err.message || 'Could not reset password.';
+  } finally {
+    $('#resetSubmitBtn').disabled = false;
+  }
 });
 
 $('#authForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const email = $('#authEmail').value;
+  const email = $('#authEmail').value.trim();
   const password = $('#authPassword').value;
-  const family_name = $('#authFamilyName').value;
+  const confirmPassword = $('#authConfirmPassword').value;
+  const family_name = $('#authFamilyName').value.trim();
+
+  if (!isLoginMode && password !== confirmPassword) {
+    $('#authError').textContent = 'Passwords do not match.';
+    $('#authError').classList.remove('hidden');
+    return;
+  }
+
   try {
     const url = isLoginMode ? '/auth/login' : '/auth/signup';
     const body = isLoginMode ? { email, password } : { email, password, family_name };
@@ -1100,6 +1201,10 @@ api('/auth/me').then(user => {
 /* ========================================================================= */
 // Duplicates Modal Logic
 /* ========================================================================= */
+$('#exportBtn').addEventListener('click', () => {
+  window.location.href = `${API}/export/excel`;
+});
+
 $('#mergeBtn').addEventListener('click', async () => {
   $('#duplicatesModalOverlay').classList.remove('hidden');
   $('#duplicatesContent').innerHTML = '<p style="text-align: center; color: var(--ink-soft); padding: 20px;">Loading...</p>';

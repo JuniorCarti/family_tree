@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcrypt');
 const session = require('express-session');
+const ExcelJS = require('exceljs');
 const db = require('./db');
 
 const app = express();
@@ -106,7 +107,7 @@ app.post('/api/auth/signup', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
-    const result = await db.query('SELECT * FROM users WHERE email = $1', [email]);
+    const result = await db.query('SELECT * FROM users WHERE email = $1 OR family_name = $1', [email]);
     const user = result.rows[0];
 
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
@@ -127,6 +128,24 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { identifier, new_password } = req.body;
+  if (!identifier || !new_password) return res.status(400).json({ error: 'Missing fields' });
+
+  try {
+    const result = await db.query('SELECT * FROM users WHERE email = $1 OR family_name = $1', [identifier]);
+    const user = result.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const hash = await bcrypt.hash(new_password, 10);
+    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, user.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not reset password' });
+  }
+});
+
 // Middleware to protect API routes
 const requireAuth = (req, res, next) => {
   if (!req.session.userId) {
@@ -138,6 +157,9 @@ const requireAuth = (req, res, next) => {
 app.use('/api/persons', requireAuth);
 app.use('/api/relationships', requireAuth);
 app.use('/api/tree', requireAuth);
+app.use('/api/export', requireAuth);
+app.use('/api/merge', requireAuth);
+app.use('/api/duplicates', requireAuth);
 
 // ---------------------------------------------------------------------------
 // Persons CRUD
@@ -401,6 +423,260 @@ app.put('/api/tree', async (req, res) => {
     const userResult = await db.query('SELECT family_name FROM users WHERE id = $1', [req.session.userId]);
     res.json({ name: userResult.rows[0].family_name });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Export
+// ---------------------------------------------------------------------------
+app.get('/api/export/excel', async (req, res) => {
+  try {
+    const userResult = await db.query('SELECT family_name FROM users WHERE id = $1', [req.session.userId]);
+    const family_name = userResult.rows[0] ? userResult.rows[0].family_name : 'My Family Tree';
+
+    const pResult = await db.query('SELECT * FROM persons WHERE user_id = $1', [req.session.userId]);
+    const persons = pResult.rows;
+
+    const rResult = await db.query('SELECT * FROM relationships WHERE user_id = $1', [req.session.userId]);
+    const storedRels = rResult.rows;
+
+    const parentsOf = new Map();
+    const childrenOf = new Map();
+    const spousesOf = new Map();
+    const siblingsOf = new Map();
+    const grandparentsOf = new Map();
+    const grandchildrenOf = new Map();
+    const auntUnclesOf = new Map();
+    const nieceNephewsOf = new Map();
+    const cousinsOf = new Map();
+    const relativesOf = new Map();
+
+    const pMap = new Map();
+
+    for (const p of persons) {
+      pMap.set(p.id, p);
+      parentsOf.set(p.id, []);
+      childrenOf.set(p.id, []);
+      spousesOf.set(p.id, []);
+      siblingsOf.set(p.id, []);
+      grandparentsOf.set(p.id, []);
+      grandchildrenOf.set(p.id, []);
+      auntUnclesOf.set(p.id, []);
+      nieceNephewsOf.set(p.id, []);
+      cousinsOf.set(p.id, []);
+      relativesOf.set(p.id, []);
+    }
+
+    const finalRels = new Set();
+    function addRel(p1Id, p2Id, typeString) {
+      if (p1Id === p2Id) return;
+      finalRels.add(`${p1Id}|${p2Id}|${typeString}`);
+    }
+
+    for (const r of storedRels) {
+      if (r.type === 'parent') {
+        childrenOf.get(r.person1_id)?.push(r.person2_id);
+        parentsOf.get(r.person2_id)?.push(r.person1_id);
+        addRel(r.person1_id, r.person2_id, 'Parent of');
+        addRel(r.person2_id, r.person1_id, 'Child of');
+      } else if (r.type === 'spouse') {
+        spousesOf.get(r.person1_id)?.push(r.person2_id);
+        spousesOf.get(r.person2_id)?.push(r.person1_id);
+        addRel(r.person1_id, r.person2_id, 'Spouse of');
+        addRel(r.person2_id, r.person1_id, 'Spouse of');
+      } else if (r.type === 'sibling') {
+        siblingsOf.get(r.person1_id)?.push(r.person2_id);
+        siblingsOf.get(r.person2_id)?.push(r.person1_id);
+        addRel(r.person1_id, r.person2_id, 'Sibling of');
+        addRel(r.person2_id, r.person1_id, 'Sibling of');
+      } else if (r.type === 'grandparent') {
+        grandparentsOf.get(r.person2_id)?.push(r.person1_id);
+        grandchildrenOf.get(r.person1_id)?.push(r.person2_id);
+        addRel(r.person1_id, r.person2_id, 'Grandparent of');
+        addRel(r.person2_id, r.person1_id, 'Grandchild of');
+      } else if (r.type === 'grandchild') {
+        grandchildrenOf.get(r.person2_id)?.push(r.person1_id);
+        grandparentsOf.get(r.person1_id)?.push(r.person2_id);
+        addRel(r.person1_id, r.person2_id, 'Grandchild of');
+        addRel(r.person2_id, r.person1_id, 'Grandparent of');
+      } else if (r.type === 'aunt_uncle') {
+        auntUnclesOf.get(r.person2_id)?.push(r.person1_id);
+        nieceNephewsOf.get(r.person1_id)?.push(r.person2_id);
+        addRel(r.person1_id, r.person2_id, 'Aunt/Uncle of');
+        addRel(r.person2_id, r.person1_id, 'Niece/Nephew of');
+      } else if (r.type === 'niece_nephew') {
+        nieceNephewsOf.get(r.person2_id)?.push(r.person1_id);
+        auntUnclesOf.get(r.person1_id)?.push(r.person2_id);
+        addRel(r.person1_id, r.person2_id, 'Niece/Nephew of');
+        addRel(r.person2_id, r.person1_id, 'Aunt/Uncle of');
+      } else if (r.type === 'cousin') {
+        cousinsOf.get(r.person1_id)?.push(r.person2_id);
+        cousinsOf.get(r.person2_id)?.push(r.person1_id);
+        addRel(r.person1_id, r.person2_id, 'Cousin of');
+        addRel(r.person2_id, r.person1_id, 'Cousin of');
+      } else if (r.type === 'relative') {
+        relativesOf.get(r.person1_id)?.push(r.person2_id);
+        relativesOf.get(r.person2_id)?.push(r.person1_id);
+        const label = r.label ? r.label : 'Other Relative';
+        addRel(r.person1_id, r.person2_id, label);
+        addRel(r.person2_id, r.person1_id, label);
+      }
+    }
+
+    for (const p of persons) {
+      const parents = parentsOf.get(p.id) || [];
+      for (const parentId of parents) {
+        const kids = childrenOf.get(parentId) || [];
+        for (const kidId of kids) {
+          if (kidId !== p.id && !(siblingsOf.get(p.id) || []).includes(kidId)) {
+            siblingsOf.get(p.id).push(kidId);
+            addRel(p.id, kidId, 'Sibling of');
+          }
+        }
+      }
+    }
+
+    for (const p of persons) {
+      const parents = parentsOf.get(p.id) || [];
+      for (const parentId of parents) {
+        const gparents = parentsOf.get(parentId) || [];
+        for (const gpId of gparents) {
+          if (!(grandparentsOf.get(p.id) || []).includes(gpId)) {
+            grandparentsOf.get(p.id).push(gpId);
+            addRel(p.id, gpId, 'Grandchild of');
+            addRel(gpId, p.id, 'Grandparent of');
+          }
+        }
+      }
+    }
+
+    for (const p of persons) {
+      const children = childrenOf.get(p.id) || [];
+      for (const childId of children) {
+        const gchildren = childrenOf.get(childId) || [];
+        for (const gcId of gchildren) {
+          if (!(grandchildrenOf.get(p.id) || []).includes(gcId)) {
+            grandchildrenOf.get(p.id).push(gcId);
+            addRel(p.id, gcId, 'Grandparent of');
+            addRel(gcId, p.id, 'Grandchild of');
+          }
+        }
+      }
+    }
+
+    for (const p of persons) {
+      const parents = parentsOf.get(p.id) || [];
+      for (const parentId of parents) {
+        const siblings = siblingsOf.get(parentId) || [];
+        for (const sibId of siblings) {
+          if (!(auntUnclesOf.get(p.id) || []).includes(sibId)) {
+            auntUnclesOf.get(p.id).push(sibId);
+            addRel(p.id, sibId, 'Niece/Nephew of');
+            addRel(sibId, p.id, 'Aunt/Uncle of');
+          }
+        }
+      }
+    }
+
+    for (const p of persons) {
+      const siblings = siblingsOf.get(p.id) || [];
+      for (const sibId of siblings) {
+        const kids = childrenOf.get(sibId) || [];
+        for (const kidId of kids) {
+          if (!(nieceNephewsOf.get(p.id) || []).includes(kidId)) {
+            nieceNephewsOf.get(p.id).push(kidId);
+            addRel(p.id, kidId, 'Aunt/Uncle of');
+            addRel(kidId, p.id, 'Niece/Nephew of');
+          }
+        }
+      }
+    }
+
+    for (const p of persons) {
+      const parents = parentsOf.get(p.id) || [];
+      for (const parentId of parents) {
+        const siblings = siblingsOf.get(parentId) || [];
+        for (const sibId of siblings) {
+          const kids = childrenOf.get(sibId) || [];
+          for (const kidId of kids) {
+            if (kidId !== p.id && !(cousinsOf.get(p.id) || []).includes(kidId)) {
+              cousinsOf.get(p.id).push(kidId);
+              addRel(p.id, kidId, 'Cousin of');
+              addRel(kidId, p.id, 'Cousin of');
+            }
+          }
+        }
+      }
+    }
+
+    const workbook = new ExcelJS.Workbook();
+
+    const sheet1 = workbook.addWorksheet('People');
+    sheet1.columns = [
+      { header: 'Family Name', key: 'family', width: 22 },
+      { header: 'First Name', key: 'first', width: 18 },
+      { header: 'Last Name', key: 'last', width: 18 },
+      { header: 'Maiden Name', key: 'maiden', width: 18 },
+      { header: 'Gender', key: 'gender', width: 12 },
+      { header: 'Birth Date', key: 'birth_date', width: 15 },
+      { header: 'Death Date', key: 'death_date', width: 15 },
+      { header: 'Birth Place', key: 'birth_place', width: 25 },
+      { header: 'Notes', key: 'notes', width: 40 }
+    ];
+
+    for (const p of persons) {
+      sheet1.addRow({
+        family: family_name,
+        first: p.first_name,
+        last: p.last_name,
+        maiden: p.maiden_name,
+        gender: p.gender,
+        birth_date: p.birth_date,
+        death_date: p.death_date,
+        birth_place: p.birth_place,
+        notes: p.notes
+      });
+    }
+    sheet1.getRow(1).font = { bold: true };
+
+    const sheet2 = workbook.addWorksheet('Relationships');
+    sheet2.columns = [
+      { header: 'Family Name', key: 'family', width: 22 },
+      { header: 'Person', key: 'person', width: 25 },
+      { header: 'Relationship', key: 'relationship', width: 20 },
+      { header: 'Related To', key: 'related_to', width: 25 }
+    ];
+
+    for (const item of finalRels) {
+      const parts = item.split('|');
+      const p1Id = Number(parts[0]);
+      const p2Id = Number(parts[1]);
+      const typeStr = parts[2];
+      const p1 = pMap.get(p1Id);
+      const p2 = pMap.get(p2Id);
+
+      if (p1 && p2) {
+        const p1Name = [p1.first_name, p1.last_name].filter(Boolean).join(' ');
+        const p2Name = [p2.first_name, p2.last_name].filter(Boolean).join(' ');
+        sheet2.addRow({
+          family: family_name,
+          person: p1Name,
+          relationship: typeStr,
+          related_to: p2Name
+        });
+      }
+    }
+    sheet2.getRow(1).font = { bold: true };
+
+    const safeFamilyName = family_name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFamilyName}_family_tree.xlsx"`);
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });

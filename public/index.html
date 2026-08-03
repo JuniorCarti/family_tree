@@ -26,18 +26,32 @@
         </div>
 
         <div class="field-row" style="margin-bottom: 16px;">
-          <label>Email</label>
-          <input type="email" id="authEmail" required />
+          <label id="authEmailLabel">Email or Family Name</label>
+          <input type="text" id="authEmail" required />
         </div>
 
-        <div class="field-row" style="margin-bottom: 16px;">
+        <div class="field-row" style="margin-bottom: 16px; position: relative;">
           <label>Password</label>
-          <input type="password" id="authPassword" required />
+          <input type="password" id="authPassword" required style="padding-right: 36px;" />
+          <button type="button" id="togglePasswordBtn"
+            style="position: absolute; right: 8px; top: 28px; background: none; border: none; cursor: pointer; color: var(--ink-soft); font-size: 16px;">👁</button>
+        </div>
+
+        <div class="field-row hidden" id="authConfirmPasswordRow" style="margin-bottom: 16px; position: relative;">
+          <label>Confirm Password</label>
+          <input type="password" id="authConfirmPassword" style="padding-right: 36px;" />
+          <button type="button" id="toggleConfirmPasswordBtn"
+            style="position: absolute; right: 8px; top: 28px; background: none; border: none; cursor: pointer; color: var(--ink-soft); font-size: 16px;">👁</button>
         </div>
 
         <div class="field-row hidden" id="authFamilyNameRow" style="margin-bottom: 24px;">
           <label>Family Tree Name</label>
           <input type="text" id="authFamilyName" placeholder="e.g. The Smith Family" />
+        </div>
+
+        <div style="text-align: right; margin-bottom: 10px; font-size: 13px;" id="authForgotPasswordWrap">
+          <a href="#" id="authForgotPasswordLink" style="color: var(--gold-deep); font-weight: 500;">Forgot
+            Password?</a>
         </div>
 
         <button type="submit" class="btn btn-primary"
@@ -47,6 +61,36 @@
           <a href="#" id="authToggleLink" style="color: var(--gold-deep); font-weight: 500;">Don't have an account? Sign
             up.</a>
         </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ Forgot Password Modal ============ -->
+  <div class="modal-overlay hidden" id="resetModalOverlay" style="z-index: 1000;">
+    <div class="modal" style="width: 360px;">
+      <div class="modal-header">
+        <h3>Reset Password</h3>
+        <button type="button" class="modal-close" id="resetModalClose">×</button>
+      </div>
+      <form id="resetForm" style="padding-top: 10px;">
+        <div id="resetMessage" class="hidden"
+          style="margin-bottom: 14px; font-size: 13px; text-align: center; padding: 8px; border-radius: 6px;"></div>
+
+        <div class="field-row" style="margin-bottom: 16px;">
+          <label>Email or Family Name</label>
+          <input type="text" id="resetIdentifier" required />
+        </div>
+
+        <div class="field-row" style="margin-bottom: 16px; position: relative;">
+          <label>New Password</label>
+          <input type="password" id="resetPassword" required style="padding-right: 36px;" />
+          <button type="button" id="toggleResetPasswordBtn"
+            style="position: absolute; right: 8px; top: 28px; background: none; border: none; cursor: pointer; color: var(--ink-soft); font-size: 16px;">👁</button>
+        </div>
+
+        <button type="submit" class="btn btn-primary"
+          style="width: 100%; margin-top: 10px; padding: 12px; font-size: 15px;" id="resetSubmitBtn">Set New
+          Password</button>
       </form>
     </div>
   </div>
@@ -80,6 +124,7 @@
         <button class="btn btn-ghost" id="resetViewBtn" title="Reset view">Reset</button>
         <button class="btn btn-primary" id="addPersonBtn">+ Add person</button>
         <button class="btn btn-ghost" id="mergeBtn" style="margin-left: 12px;">Find Duplicates</button>
+        <button class="btn btn-ghost" id="exportBtn" style="margin-left: 12px;">Download Excel</button>
         <button class="btn btn-ghost" id="logoutBtn" style="margin-left: 12px;">Log out</button>
       </div>
     </header>
