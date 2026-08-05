@@ -1492,6 +1492,49 @@ $('#approvalLogoutBtn').addEventListener('click', async () => {
   window.location.reload();
 });
 
+let approvalFaqCategory = 'all';
+
+function filterApprovalFaq() {
+  const query = $('#approvalFaqSearch').value.trim().toLocaleLowerCase();
+  const items = $$('.approval-faq-item');
+  let visibleCount = 0;
+
+  items.forEach((item) => {
+    const categoryMatches = approvalFaqCategory === 'all' || item.dataset.category === approvalFaqCategory;
+    const searchMatches = !query || item.textContent.toLocaleLowerCase().includes(query);
+    const visible = categoryMatches && searchMatches;
+    item.hidden = !visible;
+    if (!visible) item.open = false;
+    if (visible) visibleCount += 1;
+  });
+
+  $('#approvalFaqEmpty').classList.toggle('hidden', visibleCount > 0);
+  $('#approvalFaqResult').textContent = visibleCount === items.length && !query
+    ? 'Showing all questions'
+    : visibleCount + ' ' + (visibleCount === 1 ? 'question' : 'questions') + ' found';
+}
+
+function setApprovalFaqCategory(category) {
+  approvalFaqCategory = category;
+  $$('.approval-faq-filters [data-faq-category]').forEach((button) => {
+    const selected = button.dataset.faqCategory === category;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
+  filterApprovalFaq();
+}
+
+$('#approvalFaqSearch').addEventListener('input', filterApprovalFaq);
+$$('.approval-faq-filters [data-faq-category]').forEach((button) => {
+  button.addEventListener('click', () => setApprovalFaqCategory(button.dataset.faqCategory));
+});
+$$('[data-faq-category-link]').forEach((link) => {
+  link.addEventListener('click', () => {
+    $('#approvalFaqSearch').value = '';
+    setApprovalFaqCategory(link.dataset.faqCategoryLink);
+  });
+});
+
 async function loadSuperadminAccounts() {
   const filter = $('#superadminStatusFilter').value;
   const data = await api(`/superadmin/accounts?status=${encodeURIComponent(filter)}`);
