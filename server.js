@@ -9,6 +9,7 @@ const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 const ExcelJS = require('exceljs');
 const db = require('./db');
+const familyAccess = require('./family-access');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -57,123 +58,130 @@ const upload = multer({
   }
 });
 
-app.post('/api/upload', upload.single('photo'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  res.json({ url: `/uploads/${req.file.filename}` });
-});
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-async function getPerson(id, userId) {
-  const result = await db.query('SELECT * FROM persons WHERE id = $1 AND user_id = $2', [id, userId]);
+async function getPerson(id, familyId) {
+  const result = await db.query('SELECT * FROM persons WHERE id = $1 AND family_id = $2', [id, familyId]);
   return result.rows[0];
 }
 
 // ---------------------------------------------------------------------------
 // Auth Routes
 // ---------------------------------------------------------------------------
-app.get('/api/auth/me', async (req, res) => {
-  if (!req.session.userId) {
-    return res.status(401).json({ error: 'Not logged in' });
-  }
+app.get('/api/auth/me', async (req, res, next) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
   try {
-    const r = await db.query('SELECT id, email, family_name FROM users WHERE id = $1', [req.session.userId]);
-    if (r.rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    res.json(r.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    const context = await familyAccess.userContext(req.session.userId, req.session.activeFamilyId);
+    if (!context) return res.status(404).json({ error: 'User not found' });
+    req.session.activeFamilyId = context.active_family_id;
+    res.json(context);
+  } catch (error) {
+    next(error);
   }
 });
 
-app.post('/api/auth/signup', async (req, res) => {
-  const { email, password, family_name } = req.body;
+app.post('/api/auth/signup', async (req, res, next) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const password = String(req.body.password || '');
+  const familyName = String(req.body.family_name || '').trim();
+  const inviteToken = String(req.body.invite_token || '').trim();
 
-  if (!email || !password || !family_name) {
-    return res.status(400).json({ error: 'Missing required fields' });
+  if (!email || !password || (!familyName && !inviteToken)) {
+    return res.status(400).json({ error: 'Email, password, and a family name or invitation are required' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
 
+  const client = await db.pool.connect();
   try {
+    await familyAccess.ready;
+    await client.query('BEGIN');
     const hash = await bcrypt.hash(password, 10);
-    const result = await db.query(
+    const result = await client.query(
       'INSERT INTO users (email, password_hash, family_name) VALUES ($1, $2, $3) RETURNING id, email, family_name',
-      [email, hash, family_name]
+      [email, hash, familyName || 'Invited family member']
     );
     const user = result.rows[0];
-    req.session.userId = user.id;
-    res.status(201).json(user);
-  } catch (err) {
-    if (String(err).includes('unique constraint') || String(err).includes('UNIQUE')) {
-      return res.status(409).json({ error: 'Email already exists' });
+
+    let activeFamily;
+    if (inviteToken) {
+      activeFamily = await familyAccess.acceptInvitation({ token: inviteToken, userId: user.id, email, client });
+    } else {
+      activeFamily = await familyAccess.createFamily(user.id, familyName, client);
     }
-    console.error(err);
-    res.status(500).json({ error: 'Could not create user' });
-  }
-});
 
-app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body;
-  try {
-    const result = await db.query('SELECT * FROM users WHERE email = $1 OR family_name = $1', [email]);
-    const user = result.rows[0];
-
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-
-    const isValid = await bcrypt.compare(password, user.password_hash);
-    if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
-
+    await client.query('COMMIT');
     req.session.userId = user.id;
-    res.json({ id: user.id, email: user.email, family_name: user.family_name });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Login error' });
+    req.session.activeFamilyId = activeFamily.id;
+    const context = await familyAccess.userContext(user.id, activeFamily.id);
+    res.status(201).json(context);
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (error.code === '23505') return res.status(409).json({ error: 'Email already exists' });
+    if (error.status) return res.status(error.status).json({ error: error.message });
+    next(error);
+  } finally {
+    client.release();
   }
 });
 
-app.post('/api/auth/logout', (req, res) => {
-  req.session.destroy();
-  res.json({ success: true });
-});
-
-app.post('/api/auth/reset-password', async (req, res) => {
-  const { identifier, new_password } = req.body;
-  if (!identifier || !new_password) return res.status(400).json({ error: 'Missing fields' });
-
+app.post('/api/auth/login', async (req, res, next) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const password = String(req.body.password || '');
   try {
-    const result = await db.query('SELECT * FROM users WHERE email = $1 OR family_name = $1', [identifier]);
+    await familyAccess.ready;
+    const result = await db.query('SELECT * FROM users WHERE lower(email) = $1', [email]);
     const user = result.rows[0];
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
 
-    const hash = await bcrypt.hash(new_password, 10);
-    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, user.id]);
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Could not reset password' });
+    const context = await familyAccess.userContext(user.id, req.session.activeFamilyId);
+    req.session.userId = user.id;
+    req.session.activeFamilyId = context.active_family_id;
+    res.json(context);
+  } catch (error) {
+    next(error);
   }
 });
 
-// Middleware to protect API routes
-const requireAuth = (req, res, next) => {
-  if (!req.session.userId) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  next();
-};
+app.post('/api/auth/logout', (req, res, next) => {
+  req.session.destroy((error) => {
+    if (error) return next(error);
+    res.clearCookie('__session');
+    res.json({ success: true });
+  });
+});
 
-app.use('/api/persons', requireAuth);
-app.use('/api/relationships', requireAuth);
-app.use('/api/tree', requireAuth);
-app.use('/api/export', requireAuth);
-app.use('/api/merge', requireAuth);
-app.use('/api/duplicates', requireAuth);
+app.post('/api/auth/reset-password', (req, res) => {
+  res.status(501).json({ error: 'Password recovery is unavailable until verified email delivery is configured' });
+});
 
+const requireAuth = familyAccess.requireAuth;
+const requireFamily = familyAccess.requireFamily;
+const requireRole = familyAccess.requireRole;
+
+familyAccess.registerRoutes(app);
+
+app.use('/api/persons', requireAuth, requireFamily);
+app.use('/api/relationships', requireAuth, requireFamily);
+app.use('/api/tree', requireAuth, requireFamily);
+app.use('/api/export', requireAuth, requireFamily);
+app.use('/api/merge', requireAuth, requireFamily);
+app.use('/api/duplicates', requireAuth, requireFamily);
+
+app.post('/api/upload', requireAuth, requireFamily, requireRole('contributor'), upload.single('photo'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  res.json({ url: `/uploads/${req.file.filename}` });
+});
 // ---------------------------------------------------------------------------
 // Persons CRUD
 // ---------------------------------------------------------------------------
 app.get('/api/persons', async (req, res) => {
   try {
-    const result = await db.query('SELECT * FROM persons WHERE user_id = $1 ORDER BY last_name, first_name', [req.session.userId]);
+    const result = await db.query('SELECT * FROM persons WHERE family_id = $1 ORDER BY last_name, first_name', [req.family.id]);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -182,7 +190,7 @@ app.get('/api/persons', async (req, res) => {
 
 app.get('/api/persons/:id', async (req, res) => {
   try {
-    const person = await getPerson(req.params.id, req.session.userId);
+    const person = await getPerson(req.params.id, req.family.id);
     if (!person) return res.status(404).json({ error: 'Person not found' });
     res.json(person);
   } catch (err) {
@@ -190,7 +198,7 @@ app.get('/api/persons/:id', async (req, res) => {
   }
 });
 
-app.post('/api/persons', async (req, res) => {
+app.post('/api/persons', requireRole('contributor'), async (req, res) => {
   const {
     first_name, last_name = '', maiden_name = '', gender = 'unknown',
     birth_date = null, death_date = null, birth_place = null,
@@ -203,10 +211,10 @@ app.post('/api/persons', async (req, res) => {
 
   try {
     const result = await db.query(`
-      INSERT INTO persons (first_name, last_name, maiden_name, gender, birth_date, death_date, birth_place, photo_url, notes, user_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      INSERT INTO persons (first_name, last_name, maiden_name, gender, birth_date, death_date, birth_place, photo_url, notes, user_id, family_id, created_by_user_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING *
-    `, [first_name, last_name, maiden_name, gender, birth_date, death_date, birth_place, photo_url, notes, req.session.userId]);
+    `, [first_name, last_name, maiden_name, gender, birth_date, death_date, birth_place, photo_url, notes, req.session.userId, req.family.id, req.session.userId]);
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -214,9 +222,9 @@ app.post('/api/persons', async (req, res) => {
   }
 });
 
-app.put('/api/persons/:id', async (req, res) => {
+app.put('/api/persons/:id', requireRole('contributor'), async (req, res) => {
   try {
-    const existing = await getPerson(req.params.id, req.session.userId);
+    const existing = await getPerson(req.params.id, req.family.id);
     if (!existing) return res.status(404).json({ error: 'Person not found' });
 
     const merged = { ...existing, ...req.body };
@@ -226,13 +234,13 @@ app.put('/api/persons/:id', async (req, res) => {
         gender = $4, birth_date = $5, death_date = $6,
         birth_place = $7, photo_url = $8, notes = $9,
         updated_at = now()
-      WHERE id = $10 AND user_id = $11
+      WHERE id = $10 AND family_id = $11
       RETURNING *
     `, [
       merged.first_name, merged.last_name, merged.maiden_name,
       merged.gender, merged.birth_date, merged.death_date,
       merged.birth_place, merged.photo_url, merged.notes,
-      existing.id, req.session.userId
+      existing.id, req.family.id
     ]);
 
     res.json(result.rows[0]);
@@ -241,12 +249,12 @@ app.put('/api/persons/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/persons/:id', async (req, res) => {
+app.delete('/api/persons/:id', requireRole('contributor'), async (req, res) => {
   try {
-    const existing = await getPerson(req.params.id, req.session.userId);
+    const existing = await getPerson(req.params.id, req.family.id);
     if (!existing) return res.status(404).json({ error: 'Person not found' });
 
-    await db.query('DELETE FROM persons WHERE id = $1 AND user_id = $2', [req.params.id, req.session.userId]);
+    await db.query('DELETE FROM persons WHERE id = $1 AND family_id = $2', [req.params.id, req.family.id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -258,14 +266,14 @@ app.delete('/api/persons/:id', async (req, res) => {
 // ---------------------------------------------------------------------------
 app.get('/api/relationships', async (req, res) => {
   try {
-    const result = await db.query('SELECT * FROM relationships WHERE user_id = $1', [req.session.userId]);
+    const result = await db.query('SELECT * FROM relationships WHERE family_id = $1', [req.family.id]);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/relationships', async (req, res) => {
+app.post('/api/relationships', requireRole('contributor'), async (req, res) => {
   const { type, person1_id, person2_id, label = null, status = 'married', start_date = null, end_date = null } = req.body;
 
   const validTypes = ['parent', 'spouse', 'relative', 'sibling', 'grandparent', 'grandchild', 'aunt_uncle', 'niece_nephew', 'cousin'];
@@ -277,17 +285,17 @@ app.post('/api/relationships', async (req, res) => {
   }
 
   try {
-    const p1 = await getPerson(person1_id, req.session.userId);
-    const p2 = await getPerson(person2_id, req.session.userId);
+    const p1 = await getPerson(person1_id, req.family.id);
+    const p2 = await getPerson(person2_id, req.family.id);
     if (!p1 || !p2) {
       return res.status(404).json({ error: 'One or both persons not found' });
     }
 
     const result = await db.query(`
-      INSERT INTO relationships (type, person1_id, person2_id, label, status, start_date, end_date, user_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO relationships (type, person1_id, person2_id, label, status, start_date, end_date, user_id, family_id, created_by_user_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
-    `, [type, person1_id, person2_id, label, status, start_date, end_date, req.session.userId]);
+    `, [type, person1_id, person2_id, label, status, start_date, end_date, req.session.userId, req.family.id, req.session.userId]);
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -298,9 +306,9 @@ app.post('/api/relationships', async (req, res) => {
   }
 });
 
-app.delete('/api/relationships/:id', async (req, res) => {
+app.delete('/api/relationships/:id', requireRole('contributor'), async (req, res) => {
   try {
-    await db.query('DELETE FROM relationships WHERE id = $1 AND user_id = $2', [req.params.id, req.session.userId]);
+    await db.query('DELETE FROM relationships WHERE id = $1 AND family_id = $2', [req.params.id, req.family.id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -315,10 +323,10 @@ app.get('/api/duplicates', async (req, res) => {
     const result = await db.query(`
       SELECT lower(first_name) as fname, lower(last_name) as lname, array_agg(id) as ids, count(*) as count
       FROM persons
-      WHERE user_id = $1
+      WHERE family_id = $1
       GROUP BY lower(first_name), lower(last_name)
       HAVING count(*) > 1
-    `, [req.session.userId]);
+    `, [req.family.id]);
 
     const duplicates = [];
     for (const row of result.rows) {
@@ -331,7 +339,7 @@ app.get('/api/duplicates', async (req, res) => {
   }
 });
 
-app.post('/api/merge', async (req, res) => {
+app.post('/api/merge', requireRole('contributor'), async (req, res) => {
   const { keepId, mergeIds } = req.body;
   if (!keepId || !mergeIds || !Array.isArray(mergeIds) || mergeIds.length === 0) {
     return res.status(400).json({ error: 'Missing keepId or mergeIds' });
@@ -342,7 +350,7 @@ app.post('/api/merge', async (req, res) => {
     await client.query('BEGIN');
 
     // Check ownership
-    const checkUser = await client.query('SELECT id FROM persons WHERE id = ANY($1) AND user_id = $2', [[keepId, ...mergeIds], req.session.userId]);
+    const checkUser = await client.query('SELECT id FROM persons WHERE id = ANY($1) AND family_id = $2', [[keepId, ...mergeIds], req.family.id]);
     if (checkUser.rows.length !== mergeIds.length + 1) {
       throw new Error('Not all persons found or owned by user');
     }
@@ -351,43 +359,43 @@ app.post('/api/merge', async (req, res) => {
     await client.query(`
       UPDATE relationships r1
       SET person1_id = $1
-      WHERE person1_id = ANY($2) AND user_id = $3
+      WHERE person1_id = ANY($2) AND family_id = $3
         AND r1.person2_id <> $1
         AND NOT EXISTS (
           SELECT 1 FROM relationships r2
           WHERE r2.type = r1.type 
             AND r2.person1_id = $1 
             AND r2.person2_id = r1.person2_id
-            AND r2.user_id = $3
+            AND r2.family_id = $3
         )
-    `, [keepId, mergeIds, req.session.userId]);
+    `, [keepId, mergeIds, req.family.id]);
 
     // Update person2_id where it's safe
     await client.query(`
       UPDATE relationships r1
       SET person2_id = $1
-      WHERE person2_id = ANY($2) AND user_id = $3
+      WHERE person2_id = ANY($2) AND family_id = $3
         AND r1.person1_id <> $1
         AND NOT EXISTS (
           SELECT 1 FROM relationships r2
           WHERE r2.type = r1.type 
             AND r2.person1_id = r1.person1_id 
             AND r2.person2_id = $1
-            AND r2.user_id = $3
+            AND r2.family_id = $3
         )
-    `, [keepId, mergeIds, req.session.userId]);
+    `, [keepId, mergeIds, req.family.id]);
 
     // Delete any relations left pointing to mergeIds (which means they would have conflicted)
     await client.query(`
       DELETE FROM relationships 
-      WHERE (person1_id = ANY($1) OR person2_id = ANY($1)) AND user_id = $2
-    `, [mergeIds, req.session.userId]);
+      WHERE (person1_id = ANY($1) OR person2_id = ANY($1)) AND family_id = $2
+    `, [mergeIds, req.family.id]);
 
     // Finally delete the persons
     await client.query(`
       DELETE FROM persons
-      WHERE id = ANY($1) AND user_id = $2
-    `, [mergeIds, req.session.userId]);
+      WHERE id = ANY($1) AND family_id = $2
+    `, [mergeIds, req.family.id]);
 
     await client.query('COMMIT');
     res.json({ success: true });
@@ -404,48 +412,42 @@ app.post('/api/merge', async (req, res) => {
 // ---------------------------------------------------------------------------
 app.get('/api/tree', async (req, res) => {
   try {
-    // Instead of a trees table, we simulate it via the user info
-    const userResult = await db.query('SELECT family_name FROM users WHERE id = $1', [req.session.userId]);
-    const family_name = userResult.rows[0] ? userResult.rows[0].family_name : 'My Family Tree';
-
-    const pResult = await db.query('SELECT * FROM persons WHERE user_id = $1', [req.session.userId]);
-    const rResult = await db.query('SELECT * FROM relationships WHERE user_id = $1', [req.session.userId]);
-
+    const pResult = await db.query('SELECT * FROM persons WHERE family_id = $1 ORDER BY last_name, first_name', [req.family.id]);
+    const rResult = await db.query('SELECT * FROM relationships WHERE family_id = $1', [req.family.id]);
     res.json({
-      tree: { name: family_name },
+      tree: { id: req.family.id, name: req.family.name, role: req.family.role },
       persons: pResult.rows,
       relationships: rResult.rows
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
-app.put('/api/tree', async (req, res) => {
-  const { name } = req.body; // Using name to update user's family_name
+app.put('/api/tree', requireRole('admin'), async (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Family name is required' });
   try {
-    if (name) {
-      await db.query('UPDATE users SET family_name = $1 WHERE id = $2', [name, req.session.userId]);
-    }
-    const userResult = await db.query('SELECT family_name FROM users WHERE id = $1', [req.session.userId]);
-    res.json({ name: userResult.rows[0].family_name });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const result = await db.query(
+      'UPDATE families SET name = $1, updated_at = now() WHERE id = $2 RETURNING id, name',
+      [name, req.family.id]
+    );
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
-
 // ---------------------------------------------------------------------------
 // Export
 // ---------------------------------------------------------------------------
 app.get('/api/export/excel', async (req, res) => {
   try {
-    const userResult = await db.query('SELECT family_name FROM users WHERE id = $1', [req.session.userId]);
-    const family_name = userResult.rows[0] ? userResult.rows[0].family_name : 'My Family Tree';
+    const family_name = req.family.name || 'My Family Tree';
 
-    const pResult = await db.query('SELECT * FROM persons WHERE user_id = $1', [req.session.userId]);
+    const pResult = await db.query('SELECT * FROM persons WHERE family_id = $1', [req.family.id]);
     const persons = pResult.rows;
 
-    const rResult = await db.query('SELECT * FROM relationships WHERE user_id = $1', [req.session.userId]);
+    const rResult = await db.query('SELECT * FROM relationships WHERE family_id = $1', [req.family.id]);
     const storedRels = rResult.rows;
 
     const parentsOf = new Map();
@@ -699,6 +701,17 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || 'Server error' });
 });
 
-app.listen(PORT, () => {
-  console.log('Family tree server running at http://localhost:' + PORT);
-});
+if (require.main === module) {
+  Promise.all([db.ready, familyAccess.ready])
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log('Family tree server running at http://localhost:' + PORT);
+      });
+    })
+    .catch((error) => {
+      console.error('Server startup failed:', error);
+      process.exitCode = 1;
+    });
+}
+
+module.exports = { app };

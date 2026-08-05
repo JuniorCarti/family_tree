@@ -59,11 +59,13 @@ Create a local `.env` file. It is ignored by Git.
 ```env
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 SESSION_SECRET=replace_with_a_long_random_secret
+# DATABASE_SSL=false # local PostgreSQL only; omit in production
 ```
 
 - `DATABASE_URL` must be reachable from Cloud Run.
 - `SESSION_SECRET` should be long, random, and stable across deployments. Changing it invalidates existing sessions.
 - Never commit `.env` or paste secret values into documentation.
+- PostgreSQL TLS is enabled by default. Use `DATABASE_SSL=false` only for a trusted local database without TLS.
 
 For a mature production environment, store these values in Google Secret Manager and bind them to Cloud Run instead of passing them on the command line.
 
@@ -114,6 +116,25 @@ gcloud run deploy lineage-api `
 
 A successful deployment reports a new revision serving 100 percent of traffic.
 
+## Shared-family migration
+
+The first revision containing family sharing performs an automatic, idempotent PostgreSQL migration before it starts listening:
+
+1. Create `families`, `family_memberships`, and `family_invitations`.
+2. Create an owner family for each existing account.
+3. Backfill existing people and relationships with that family's ID.
+4. Add family indexes and enforce required family ownership.
+
+The migration is serialized with a PostgreSQL advisory lock, so multiple Cloud Run instances cannot run it concurrently. If any step fails, startup fails and Cloud Run will not send traffic to that revision.
+
+Before the first production rollout:
+
+- take a PostgreSQL backup or verify that a recent recoverable backup exists;
+- confirm the database user can run `CREATE TABLE`, `ALTER TABLE`, and `CREATE INDEX`;
+- keep the previous Cloud Run revision available until verification finishes;
+- inspect revision logs for `Database initialized successfully` and no family-sharing migration error.
+
+Existing users remain owners of their existing data. No relative receives access until an owner or administrator creates an invitation.
 ## Deploy Firebase Hosting
 
 The Cloud Run service must exist before Firebase validates the rewrite in `firebase.json`.
@@ -142,6 +163,17 @@ Invoke-WebRequest -Uri 'https://family-tree-a4c4f.web.app/' -UseBasicParsing
 
 Both should return HTTP `200`.
 
+### Family-access verification
+
+After signing in as an existing account:
+
+1. Confirm its existing people are visible and its role badge says `owner`.
+2. Open **Family access**, invite a temporary second email as `viewer`, and open the link in a private browser session.
+3. Confirm the viewer sees the shared tree but cannot add, edit, delete, merge, or rename.
+4. Promote that account to `contributor` and confirm it can add a person.
+5. Remove the temporary member and verify access is denied on the next request.
+
+The automated equivalent is documented in [docs/FAMILY_ACCESS.md](docs/FAMILY_ACCESS.md).
 ### Authentication verification
 
 Use the hosted site, sign in, and inspect the browser's Application/Storage tab:

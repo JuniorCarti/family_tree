@@ -76,6 +76,7 @@ async function loadTree() {
   state.relationships = data.relationships;
   state.tree = data.tree;
   $('#treeName').value = data.tree?.name || 'My Family Tree';
+  $('#treeName').readOnly = !hasFamilyRole('admin');
   $('#personCount').textContent = `${state.persons.length} ${state.persons.length === 1 ? 'person' : 'people'}`;
   render();
 }
@@ -1079,24 +1080,259 @@ $('#f_relation_type').addEventListener('change', (e) => {
   $('#relativeLabelRow').classList.toggle('hidden', e.target.value !== 'relative_of');
 });
 
-// ------------------------------------------------------------------ Auth logic
+// ------------------------------------------------------------------ Family access and authentication
+const FAMILY_ROLE_LEVEL = { viewer: 1, contributor: 2, admin: 3, owner: 4 };
+const inviteToken = new URLSearchParams(window.location.search).get('invite');
+let invitationInfo = null;
 let isLoginMode = true;
-$('#authToggleLink').addEventListener('click', (e) => {
-  e.preventDefault();
-  isLoginMode = !isLoginMode;
-  $('#authTitle').textContent = isLoginMode ? 'Sign In to Lineage' : 'Create an Account';
-  $('#authSubmitBtn').textContent = isLoginMode ? 'Sign In' : 'Sign Up';
-  $('#authToggleLink').textContent = isLoginMode ? "Don't have an account? Sign up." : 'Already have an account? Sign in.';
-  $('#authFamilyNameRow').classList.toggle('hidden', isLoginMode);
-  $('#authFamilyName').required = !isLoginMode;
 
-  $('#authConfirmPasswordRow').classList.toggle('hidden', isLoginMode);
-  $('#authConfirmPassword').required = !isLoginMode;
-  $('#authForgotPasswordWrap').classList.toggle('hidden', !isLoginMode);
+function activeFamily() {
+  return currentUser?.active_family || currentUser?.families?.find((family) => Number(family.id) === Number(currentUser.active_family_id)) || null;
+}
 
-  $('#authEmailLabel').textContent = isLoginMode ? 'Email or Family Name' : 'Email';
+function hasFamilyRole(minimumRole) {
+  const role = currentUser?.active_family_role || activeFamily()?.role;
+  return (FAMILY_ROLE_LEVEL[role] || 0) >= FAMILY_ROLE_LEVEL[minimumRole];
+}
 
+function applyUserContext(context) {
+  currentUser = context;
+  const families = context?.families || [];
+  const selectedId = Number(context?.active_family_id || context?.active_family?.id || 0);
+  const select = $('#familySelect');
+  select.innerHTML = families.map((family) =>
+    `<option value="${family.id}" ${Number(family.id) === selectedId ? 'selected' : ''}>${escapeHtml(family.name)}</option>`
+  ).join('');
+
+  const family = families.find((item) => Number(item.id) === selectedId) || context?.active_family || null;
+  if (family) {
+    currentUser.active_family = family;
+    currentUser.active_family_id = family.id;
+    currentUser.active_family_role = family.role;
+  }
+  const role = family?.role || 'viewer';
+  $('#familyRoleBadge').textContent = role;
+  document.body.dataset.familyRole = role;
+  $('#treeName').readOnly = !hasFamilyRole('admin');
+}
+
+async function refreshUserContext() {
+  const context = await api('/auth/me');
+  applyUserContext(context);
+  return context;
+}
+
+function showAuthenticatedApp(context) {
+  applyUserContext(context);
+  $('#authScreen').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+}
+
+function setAuthMode(loginMode) {
+  isLoginMode = loginMode;
+  const joining = Boolean(inviteToken && invitationInfo);
+  $('#authTitle').textContent = loginMode ? 'Sign In to Lineage' : (joining ? `Join ${invitationInfo.family_name}` : 'Create an Account');
+  $('#authSubmitBtn').textContent = loginMode ? 'Sign In' : (joining ? 'Create account and join' : 'Sign Up');
+  $('#authToggleLink').textContent = loginMode ? "Don't have an account? Sign up." : 'Already have an account? Sign in.';
+  $('#authFamilyNameRow').classList.toggle('hidden', loginMode || joining);
+  $('#authFamilyName').required = !loginMode && !joining;
+  $('#authConfirmPasswordRow').classList.toggle('hidden', loginMode);
+  $('#authConfirmPassword').required = !loginMode;
+  $('#authForgotPasswordWrap').classList.add('hidden');
+  $('#authEmailLabel').textContent = 'Email';
   $('#authError').classList.add('hidden');
+}
+
+async function loadInvitationNotice() {
+  if (!inviteToken) return;
+  const notice = $('#inviteNotice');
+  try {
+    invitationInfo = await api(`/invitations/${encodeURIComponent(inviteToken)}`);
+    notice.textContent = `You have been invited to ${invitationInfo.family_name} as ${invitationInfo.role}. Sign in or create an account using ${invitationInfo.invited_email}.`;
+    notice.classList.remove('hidden');
+    setAuthMode(isLoginMode);
+  } catch (error) {
+    notice.textContent = error.message;
+    notice.classList.remove('hidden');
+    notice.style.borderColor = '#a13a3a';
+  }
+}
+
+async function acceptPendingInvitation() {
+  if (!inviteToken) return false;
+  await api(`/invitations/${encodeURIComponent(inviteToken)}/accept`, { method: 'POST' });
+  window.history.replaceState({}, document.title, window.location.pathname);
+  await refreshUserContext();
+  return true;
+}
+
+$('#familySelect').addEventListener('change', async (event) => {
+  try {
+    await api(`/families/${event.target.value}/select`, { method: 'POST' });
+    await refreshUserContext();
+    state.selectedId = null;
+    $('#sidePanel').classList.add('hidden');
+    await loadTree();
+  } catch (error) {
+    alert(error.message);
+    await refreshUserContext();
+  }
+});
+
+function showFamilyMessage(message, type = 'error') {
+  const element = $('#familyModalMessage');
+  element.textContent = message;
+  element.className = `family-message ${type}`;
+}
+
+function clearFamilyMessage() {
+  $('#familyModalMessage').className = 'hidden family-message';
+}
+
+async function loadFamilyManagement() {
+  clearFamilyMessage();
+  const family = activeFamily();
+  if (!family) return;
+  $('#familyModalSubtitle').textContent = `${family.name} · ${family.role}`;
+  $('#memberPermissionHint').textContent = hasFamilyRole('admin') ? 'You can manage access.' : 'Only administrators can change access.';
+  $('#inviteSection').classList.toggle('hidden', !hasFamilyRole('admin'));
+  const adminInviteOption = $('#inviteRole').querySelector('option[value="admin"]');
+  adminInviteOption.disabled = currentUser.active_family_role !== 'owner';
+  if (adminInviteOption.disabled && $('#inviteRole').value === 'admin') $('#inviteRole').value = 'contributor';
+
+  const data = await api('/family/members');
+  const canManage = hasFamilyRole('admin');
+  $('#familyMembersList').innerHTML = data.members.map((member) => {
+    const isOwner = member.role === 'owner';
+    const canManageAdmin = currentUser.active_family_role === 'owner';
+    const editable = canManage && !isOwner && (member.role !== 'admin' || canManageAdmin);
+    const roleControl = editable ? `
+      <select class="member-role-select" data-user-id="${member.id}">
+        <option value="viewer" ${member.role === 'viewer' ? 'selected' : ''}>Viewer</option>
+        <option value="contributor" ${member.role === 'contributor' ? 'selected' : ''}>Contributor</option>
+        ${canManageAdmin ? `<option value="admin" ${member.role === 'admin' ? 'selected' : ''}>Administrator</option>` : ''}
+      </select>
+      <button class="btn btn-ghost member-remove-btn" data-user-id="${member.id}" type="button">Remove</button>
+    ` : `<span class="role-badge">${member.role}</span>`;
+    return `
+      <div class="member-row">
+        <div class="member-identity">
+          <div class="member-email">${escapeHtml(member.email)}${Number(member.id) === Number(currentUser.id) ? ' (you)' : ''}</div>
+          <div class="member-meta">Joined ${new Date(member.joined_at).toLocaleDateString()}</div>
+        </div>
+        ${roleControl}
+      </div>
+    `;
+  }).join('');
+
+  $$('.member-role-select').forEach((select) => {
+    select.addEventListener('change', async () => {
+      try {
+        await api(`/family/members/${select.dataset.userId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ role: select.value })
+        });
+        showFamilyMessage('Member role updated.', 'success');
+        await refreshUserContext();
+        await loadFamilyManagement();
+      } catch (error) {
+        showFamilyMessage(error.message);
+        await loadFamilyManagement();
+      }
+    });
+  });
+
+  $$('.member-remove-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (!confirm('Remove this person from the family tree?')) return;
+      try {
+        await api(`/family/members/${button.dataset.userId}`, { method: 'DELETE' });
+        showFamilyMessage('Member removed.', 'success');
+        await loadFamilyManagement();
+      } catch (error) {
+        showFamilyMessage(error.message);
+      }
+    });
+  });
+
+  if (hasFamilyRole('admin')) await loadPendingInvitations();
+}
+
+async function loadPendingInvitations() {
+  const data = await api('/family/invitations');
+  const container = $('#pendingInvitations');
+  if (!data.invitations.length) {
+    container.innerHTML = '<p class="muted-text">No pending invitations.</p>';
+    return;
+  }
+  container.innerHTML = data.invitations.map((invitation) => `
+    <div class="pending-invite-row">
+      <div class="pending-invite-identity">
+        <div class="pending-invite-email">${escapeHtml(invitation.email)}</div>
+        <div class="pending-invite-meta">${invitation.role} · expires ${new Date(invitation.expires_at).toLocaleDateString()}</div>
+      </div>
+      <button class="btn btn-ghost revoke-invite-btn" data-invite-id="${invitation.id}" type="button">Revoke</button>
+    </div>
+  `).join('');
+  $$('.revoke-invite-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await api(`/family/invitations/${button.dataset.inviteId}`, { method: 'DELETE' });
+      await loadPendingInvitations();
+    });
+  });
+}
+
+$('#manageFamilyBtn').addEventListener('click', async () => {
+  $('#familyModalOverlay').classList.remove('hidden');
+  try {
+    await loadFamilyManagement();
+  } catch (error) {
+    showFamilyMessage(error.message);
+  }
+});
+
+$('#familyModalClose').addEventListener('click', () => $('#familyModalOverlay').classList.add('hidden'));
+
+$('#createFamilyForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    await api('/families', { method: 'POST', body: JSON.stringify({ name: $('#newFamilyName').value.trim() }) });
+    $('#newFamilyName').value = '';
+    await refreshUserContext();
+    await loadTree();
+    await loadFamilyManagement();
+    showFamilyMessage('Family tree created.', 'success');
+  } catch (error) {
+    showFamilyMessage(error.message);
+  }
+});
+
+$('#inviteForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    const data = await api('/family/invitations', {
+      method: 'POST',
+      body: JSON.stringify({ email: $('#inviteEmail').value.trim(), role: $('#inviteRole').value })
+    });
+    const link = new URL(data.invite_path, window.location.origin).toString();
+    $('#inviteLink').value = link;
+    $('#inviteResult').classList.remove('hidden');
+    $('#inviteEmail').value = '';
+    showFamilyMessage('Invitation created. Send this link privately to your relative.', 'success');
+    await loadPendingInvitations();
+  } catch (error) {
+    showFamilyMessage(error.message);
+  }
+});
+
+$('#copyInviteBtn').addEventListener('click', async () => {
+  await navigator.clipboard.writeText($('#inviteLink').value);
+  showFamilyMessage('Invitation link copied.', 'success');
+});
+
+$('#authToggleLink').addEventListener('click', (event) => {
+  event.preventDefault();
+  setAuthMode(!isLoginMode);
 });
 
 function togglePassword(inputId, btnId) {
@@ -1108,7 +1344,7 @@ function togglePassword(inputId, btnId) {
       btn.innerHTML = '<span style="font-size:12px;opacity:0.7">HIDE</span>';
     } else {
       input.type = 'password';
-      btn.innerHTML = '👁';
+      btn.textContent = 'Show';
     }
   });
 }
@@ -1116,45 +1352,40 @@ togglePassword('authPassword', 'togglePasswordBtn');
 togglePassword('authConfirmPassword', 'toggleConfirmPasswordBtn');
 togglePassword('resetPassword', 'toggleResetPasswordBtn');
 
-$('#authForgotPasswordLink').addEventListener('click', (e) => {
-  e.preventDefault();
+$('#authForgotPasswordLink').addEventListener('click', (event) => {
+  event.preventDefault();
   $('#resetModalOverlay').classList.remove('hidden');
   $('#resetMessage').classList.add('hidden');
   $('#resetIdentifier').value = $('#authEmail').value;
   $('#resetPassword').value = '';
 });
 
-$('#resetModalClose').addEventListener('click', () => {
-  $('#resetModalOverlay').classList.add('hidden');
-});
+$('#resetModalClose').addEventListener('click', () => $('#resetModalOverlay').classList.add('hidden'));
 
-$('#resetForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const identifier = $('#resetIdentifier').value.trim();
-  const new_password = $('#resetPassword').value;
-
+$('#resetForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
   try {
     $('#resetSubmitBtn').disabled = true;
-    await api('/auth/reset-password', { method: 'POST', body: JSON.stringify({ identifier, new_password }) });
+    await api('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ identifier: $('#resetIdentifier').value.trim(), new_password: $('#resetPassword').value })
+    });
     $('#resetMessage').classList.remove('hidden');
     $('#resetMessage').style.backgroundColor = '#e1f5e8';
     $('#resetMessage').style.color = '#2d6a4f';
-    $('#resetMessage').textContent = 'Password reset successfully! You can now sign in.';
-    setTimeout(() => {
-      $('#resetModalOverlay').classList.add('hidden');
-    }, 2500);
-  } catch (err) {
+    $('#resetMessage').textContent = 'Password reset successfully. You can now sign in.';
+  } catch (error) {
     $('#resetMessage').classList.remove('hidden');
     $('#resetMessage').style.backgroundColor = '#faeaea';
     $('#resetMessage').style.color = '#a13a3a';
-    $('#resetMessage').textContent = err.message || 'Could not reset password.';
+    $('#resetMessage').textContent = error.message;
   } finally {
     $('#resetSubmitBtn').disabled = false;
   }
 });
 
-$('#authForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
+$('#authForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
   const email = $('#authEmail').value.trim();
   const password = $('#authPassword').value;
   const confirmPassword = $('#authConfirmPassword').value;
@@ -1168,36 +1399,57 @@ $('#authForm').addEventListener('submit', async (e) => {
 
   try {
     const url = isLoginMode ? '/auth/login' : '/auth/signup';
-    const body = isLoginMode ? { email, password } : { email, password, family_name };
-    const user = await api(url, { method: 'POST', body: JSON.stringify(body) });
-    currentUser = user;
-    $('#authScreen').classList.add('hidden');
-    $('#app').classList.remove('hidden');
-    loadTree();
-  } catch (err) {
-    $('#authError').textContent = err.message;
+    const body = isLoginMode
+      ? { email, password }
+      : { email, password, family_name, invite_token: inviteToken || undefined };
+    let context = await api(url, { method: 'POST', body: JSON.stringify(body) });
+    if (isLoginMode && inviteToken) {
+      try {
+        await acceptPendingInvitation();
+        context = await api('/auth/me');
+      } catch (invitationError) {
+        showAuthenticatedApp(context);
+        await loadTree();
+        alert(`You signed in, but the invitation was not accepted: ${invitationError.message}`);
+        return;
+      }
+    } else if (!isLoginMode && inviteToken) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    showAuthenticatedApp(context);
+    await loadTree();
+  } catch (error) {
+    $('#authError').textContent = error.message;
     $('#authError').classList.remove('hidden');
   }
 });
 
 $('#logoutBtn').addEventListener('click', async () => {
-  await api('/auth/logout', { method: 'POST' }).catch(() => { });
+  await api('/auth/logout', { method: 'POST' }).catch(() => {});
   window.location.reload();
 });
 
-// ------------------------------------------------------------------ init
-api('/auth/me').then(user => {
-  currentUser = user;
-  $('#authScreen').classList.add('hidden');
-  $('#app').classList.remove('hidden');
-  loadTree().catch(err => {
-    console.error(err);
-    alert('Could not load the family tree.');
-  });
-}).catch(() => {
-  // 401 will have shown the auth screen automatically via the api function
-});
+async function initializeApp() {
+  await loadInvitationNotice();
+  try {
+    let context = await api('/auth/me');
+    showAuthenticatedApp(context);
+    if (inviteToken) {
+      try {
+        await acceptPendingInvitation();
+        context = await api('/auth/me');
+        showAuthenticatedApp(context);
+      } catch (invitationError) {
+        console.warn(`Invitation was not accepted: ${invitationError.message}`);
+      }
+    }
+    await loadTree();
+  } catch (error) {
+    if (error.message !== 'Unauthorized') console.warn(error.message);
+  }
+}
 
+initializeApp();
 /* ========================================================================= */
 // Duplicates Modal Logic
 /* ========================================================================= */

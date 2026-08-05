@@ -10,6 +10,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
     rel="stylesheet">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 
@@ -22,11 +23,14 @@
       </div>
       <form id="authForm" style="padding: 24px 20px;">
         <div id="authError" class="hidden"
+
           style="color: #a13a3a; margin-bottom: 14px; font-size: 13px; text-align: center; background: #faeaea; padding: 8px; border-radius: 6px;">
+
         </div>
+        <div id="inviteNotice" class="hidden invite-notice"></div>
 
         <div class="field-row" style="margin-bottom: 16px;">
-          <label id="authEmailLabel">Email or Family Name</label>
+          <label id="authEmailLabel">Email</label>
           <input type="text" id="authEmail" required />
         </div>
 
@@ -77,7 +81,7 @@
           style="margin-bottom: 14px; font-size: 13px; text-align: center; padding: 8px; border-radius: 6px;"></div>
 
         <div class="field-row" style="margin-bottom: 16px;">
-          <label>Email or Family Name</label>
+          <label>Email</label>
           <input type="text" id="resetIdentifier" required />
         </div>
 
@@ -112,6 +116,12 @@
           <input id="treeName" class="tree-name-input" value="My Family Tree" spellcheck="false" />
           <span class="brand-sub" id="personCount">0 people</span>
         </div>
+      </div>
+
+      <div class="family-context">
+        <select id="familySelect" class="family-select" aria-label="Active family tree"></select>
+        <span id="familyRoleBadge" class="role-badge">viewer</span>
+        <button class="btn btn-ghost" id="manageFamilyBtn">Family access</button>
       </div>
 
       <div class="topbar-actions">
@@ -179,6 +189,55 @@
 
   </div>
 
+  <!-- ============ Family Access Modal ============ -->
+  <div class="modal-overlay hidden" id="familyModalOverlay">
+    <div class="modal family-modal">
+      <div class="modal-header">
+        <div>
+          <h3>Family access</h3>
+          <p id="familyModalSubtitle" class="modal-subtitle"></p>
+        </div>
+        <button class="modal-close" id="familyModalClose">&times;</button>
+      </div>
+
+      <section class="family-section">
+        <h4>Your family trees</h4>
+        <form id="createFamilyForm" class="inline-form">
+          <input id="newFamilyName" type="text" placeholder="New family tree name" required />
+          <button class="btn btn-ghost" type="submit">Create tree</button>
+        </form>
+      </section>
+
+      <section class="family-section">
+        <div class="section-heading-row">
+          <h4>Members</h4>
+          <span id="memberPermissionHint" class="muted-text"></span>
+        </div>
+        <div id="familyMembersList" class="member-list"></div>
+      </section>
+
+      <section class="family-section hidden" id="inviteSection">
+        <h4>Invite a relative</h4>
+        <p class="muted-text">Each relative signs in with their own account. Invitation links expire after seven days.</p>
+        <form id="inviteForm" class="invite-form">
+          <input id="inviteEmail" type="email" placeholder="relative@example.com" required />
+          <select id="inviteRole">
+            <option value="viewer">Viewer</option>
+            <option value="contributor" selected>Contributor</option>
+            <option value="admin">Administrator</option>
+          </select>
+          <button class="btn btn-primary" type="submit">Create invitation</button>
+        </form>
+        <div id="inviteResult" class="hidden invite-result">
+          <input id="inviteLink" type="text" readonly />
+          <button type="button" class="btn btn-ghost" id="copyInviteBtn">Copy link</button>
+        </div>
+        <div id="pendingInvitations" class="pending-invitations"></div>
+      </section>
+
+      <div id="familyModalMessage" class="hidden family-message"></div>
+    </div>
+  </div>
   <!-- ============ Add / Edit Person Modal ============ -->
   <div class="modal-overlay hidden" id="personModalOverlay">
     <div class="modal">

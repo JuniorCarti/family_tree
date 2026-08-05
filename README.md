@@ -1,6 +1,6 @@
 # Lineage Family Tree
 
-Lineage is a full-stack family tree application for creating people, connecting family relationships, and exploring a generated multi-generation chart.
+Lineage is a full-stack family tree application for building shared, multi-generation family records. Every relative uses their own account and receives role-based access through an invitation; nobody needs to share the tree creator's password.
 
 ## Live application
 
@@ -10,13 +10,16 @@ Lineage is a full-stack family tree application for creating people, connecting 
 
 ## Features
 
-- Email and family-name authentication
-- Separate family data for each user
+- Individual email accounts with PostgreSQL-backed sessions
+- Shared family trees with invitation links and role-based access
+- Viewer, contributor, administrator, and owner permissions
+- Multiple family trees per account with an active-tree selector
 - Parent, spouse, sibling, grandparent, grandchild, cousin, and custom relationships
-- Interactive SVG family-tree layout with search, pan, and zoom
-- Person creation, editing, deletion, photo upload, duplicate detection, and merging
-- Excel export
-- PostgreSQL-backed sessions suitable for multiple Cloud Run instances
+- Interactive SVG layout with search, pan, and zoom
+- Person editing, photo upload, duplicate detection, merging, and Excel export
+- Automatic migration of existing account-owned trees into shared families
+
+See [Family Access and Sharing](docs/FAMILY_ACCESS.md) for the joining flow, role matrix, API, migration details, and security notes.
 
 ## Technology
 
@@ -26,7 +29,6 @@ Lineage is a full-stack family tree application for creating people, connecting 
 | Backend | Node.js 20 and Express |
 | Database | PostgreSQL using `pg` |
 | Sessions | `express-session` with `connect-pg-simple` |
-| Container | Docker |
 | API hosting | Google Cloud Run |
 | Static hosting | Firebase Hosting |
 
@@ -36,101 +38,90 @@ Lineage is a full-stack family tree application for creating people, connecting 
 
 - Node.js 20 or newer
 - npm
-- A PostgreSQL database
+- PostgreSQL
 
 ### Installation
 
-1. Clone the repository.
-2. Install dependencies:
+1. Clone the repository and install dependencies:
 
    ```bash
    npm install
    ```
 
-3. Create `.env` in the repository root:
+2. Copy `.env.example` to `.env` and set at least:
 
    ```env
    DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
    SESSION_SECRET=replace_with_a_long_random_secret
    ```
 
-4. Start the server:
+   For a trusted local PostgreSQL server without TLS, also set `DATABASE_SSL=false`. Production connections use TLS by default.
+
+3. Start the application:
 
    ```bash
    npm start
    ```
 
-5. Open http://localhost:4000.
+4. Open http://localhost:4000.
 
-The application creates or verifies its PostgreSQL tables during startup. The `.env` file is ignored by Git and must never be committed.
+Startup creates or migrates the PostgreSQL schema before the HTTP listener starts. `.env` is ignored by Git and must never be committed.
 
-## Application architecture
+## Architecture
 
 ```text
 Browser
   |
-  | static files and /api/**
   v
 Firebase Hosting
-  |                 |
-  | static assets   | /api/** rewrite
-  v                 v
-public/          Cloud Run: lineage-api
-                     |
-                     +-- PostgreSQL application data
-                     +-- PostgreSQL session table
+  |-- static files ------> public/
+  `-- /api/** -----------> Cloud Run: lineage-api
+                                 |
+                                 +-- Express sessions
+                                 +-- users
+                                 +-- families
+                                 +-- memberships and invitations
+                                 +-- people and relationships by family_id
 ```
 
-Firebase Hosting forwards `/api/**` to the `lineage-api` Cloud Run service in `us-central1`. Express uses Firebase's reserved `__session` cookie name, trusts the hosting proxy, and stores session records in PostgreSQL.
+Firebase preserves the `__session` cookie for rewritten `/api/**` requests. Express trusts the hosting proxy and keeps session records in PostgreSQL so authentication survives Cloud Run instance changes.
 
-## API overview
+## Main API groups
 
-All endpoints use the `/api` prefix.
+| Prefix | Purpose |
+| --- | --- |
+| `/api/auth` | Signup, login, logout, and current account context |
+| `/api/families` | List, create, and select family trees |
+| `/api/family` | Members, invitations, and role administration |
+| `/api/persons` | People in the active family |
+| `/api/relationships` | Relationships in the active family |
+| `/api/tree` | Shared tree payload and administrator rename |
+| `/api/duplicates`, `/api/merge` | Duplicate review and contributor merge |
+| `/api/export` | Active-family Excel export |
 
-| Method | Endpoint | Purpose | Authentication |
-| --- | --- | --- | --- |
-| GET | `/api/auth/me` | Return the current user | Session |
-| POST | `/api/auth/signup` | Create an account | Public |
-| POST | `/api/auth/login` | Sign in | Public |
-| POST | `/api/auth/logout` | End the session | Session |
-| POST | `/api/auth/reset-password` | Reset a password | Public |
-| GET/POST | `/api/persons` | List or create people | Required |
-| GET/PUT/DELETE | `/api/persons/:id` | Read, edit, or delete a person | Required |
-| GET/POST | `/api/relationships` | List or create relationships | Required |
-| DELETE | `/api/relationships/:id` | Delete a relationship | Required |
-| GET/PUT | `/api/tree` | Load or rename a family tree | Required |
-| POST | `/api/upload` | Upload a profile image | Required by UI flow |
-| GET | `/api/export/excel` | Export family data | Required |
-| GET | `/api/duplicates` | Find duplicate people | Required |
-| POST | `/api/merge` | Merge duplicate people | Required |
+Detailed family endpoints and permissions are in [docs/FAMILY_ACCESS.md](docs/FAMILY_ACCESS.md).
 
-## Deployment
+## Testing
 
-See [README.deploy.md](README.deploy.md) for the complete Cloud Run and Firebase Hosting procedure, environment configuration, verification commands, rollback guidance, and troubleshooting.
+The family-access integration test requires a disposable PostgreSQL database:
 
-## Repository structure
-
-```text
-.
-|-- public/                Browser application
-|   |-- index.html
-|   |-- style.css
-|   `-- app.js
-|-- db.js                  PostgreSQL pool and schema initialization
-|-- server.js              Express server and API routes
-|-- Dockerfile             Cloud Run container image
-|-- firebase.json          Hosting and /api rewrite configuration
-|-- package.json           Runtime dependencies and scripts
-|-- README.deploy.md       Deployment and operations guide
-`-- CONTRIBUTING.md        Branch and pull-request workflow
+```powershell
+$env:DATABASE_URL='postgresql://postgres:password@127.0.0.1:55432/lineage_test'
+$env:DATABASE_SSL='false'
+$env:SESSION_SECRET='local-test-secret'
+npm run test:family-access
 ```
 
-## Operational limitations
+## Deployment and collaboration
 
-- Uploaded images are written to the container filesystem. Cloud Run storage is ephemeral, so production uploads should move to Cloud Storage.
-- The Express API currently contains most routes in one file. Splitting routes and services would improve maintainability as the project grows.
-- Password reset currently accepts an identifier and a new password directly. A production system should use expiring, single-use reset tokens delivered through a verified channel.
+- [Deployment guide](README.deploy.md)
+- [Contribution workflow](CONTRIBUTING.md)
+- [Family access design and operations](docs/FAMILY_ACCESS.md)
 
-## Contributing
+Use a feature branch and pull request rather than committing directly to `main`.
 
-Use a feature branch and open a pull request rather than committing directly to `main`. See [CONTRIBUTING.md](CONTRIBUTING.md).
+## Current limitations
+
+- Password recovery is intentionally unavailable until verified email delivery and expiring, single-use reset tokens are implemented.
+- Profile uploads use Cloud Run's ephemeral filesystem and should move to Cloud Storage for durable production use.
+- The Express API remains mostly monolithic; route/service separation would improve maintainability as it grows.
