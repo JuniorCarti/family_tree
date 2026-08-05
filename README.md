@@ -1,112 +1,136 @@
-# Lineage — Family Tree App
+# Lineage Family Tree
 
-A full-stack family tree builder: add people, connect them as parents,
-spouses, and children, and see them laid out automatically as a
-generational chart (top = oldest ancestors, each row below = the next
-generation), similar to MyHeritage-style tree views.
+Lineage is a full-stack family tree application for creating people, connecting family relationships, and exploring a generated multi-generation chart.
 
-## Stack
+## Live application
 
-- **Backend:** Node.js + Express + PostgreSQL (via `pg`) — providing secure, multi-tenant family trees.
-- **Frontend:** Plain HTML/CSS/JS (no build step) rendered as SVG, served
-  by the same Express server.
+- Firebase Hosting: https://family-tree-a4c4f.web.app
+- Cloud Run API: https://lineage-api-662162914072.us-central1.run.app
+- Google Cloud project: `family-tree-a4c4f`
 
-## Setup
+## Features
 
-Requires [Node.js](https://nodejs.org) 18+. You will also need a PostgreSQL database.
+- Email and family-name authentication
+- Separate family data for each user
+- Parent, spouse, sibling, grandparent, grandchild, cousin, and custom relationships
+- Interactive SVG family-tree layout with search, pan, and zoom
+- Person creation, editing, deletion, photo upload, duplicate detection, and merging
+- Excel export
+- PostgreSQL-backed sessions suitable for multiple Cloud Run instances
 
-1. Ensure PostgreSQL is running and create a database (e.g., `family_tree`).
-2. Create a `.env` file in the project folder with your database connection:
-   ```env
-   DATABASE_URL=postgresql://postgres:password@localhost:5432/family_tree
-   SESSION_SECRET=create_a_super_secret_random_string_here
-   ```
-3. Install dependencies and start the app:
+## Technology
+
+| Layer | Technology |
+| --- | --- |
+| Frontend | HTML, CSS, and browser JavaScript |
+| Backend | Node.js 20 and Express |
+| Database | PostgreSQL using `pg` |
+| Sessions | `express-session` with `connect-pg-simple` |
+| Container | Docker |
+| API hosting | Google Cloud Run |
+| Static hosting | Firebase Hosting |
+
+## Local setup
+
+### Requirements
+
+- Node.js 20 or newer
+- npm
+- A PostgreSQL database
+
+### Installation
+
+1. Clone the repository.
+2. Install dependencies:
+
    ```bash
    npm install
+   ```
+
+3. Create `.env` in the repository root:
+
+   ```env
+   DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+   SESSION_SECRET=replace_with_a_long_random_secret
+   ```
+
+4. Start the server:
+
+   ```bash
    npm start
    ```
 
-Then open **http://localhost:4000** in your browser. The tables will be created automatically on the first run.
+5. Open http://localhost:4000.
 
+The application creates or verifies its PostgreSQL tables during startup. The `.env` file is ignored by Git and must never be committed.
 
-## Using it
+## Application architecture
 
-- **Add a person** — top-right button, or the empty-state prompt on a
-  blank tree. Fill in name, dates, a photo (optional), and — if this
-  isn't the very first person — pick how they connect to someone already
-  in the tree (child of / parent of / spouse of).
-- **Click any card** to open their detail panel on the right: edit their
-  info, or use "+ Add parent / child / spouse" to grow the tree from
-  that person.
-- **Hover a card** and click the small "+" badge on it as a shortcut to
-  add a relative connected to that person.
-- **Search** people by name in the top bar; selecting a result centers
-  the view on them.
-- **Pan** by dragging the canvas; **zoom** with the +/− buttons or
-  Ctrl/Cmd + scroll wheel.
-- The tree name at the top left is editable and saved automatically.
-
-## Data model
-
-Two tables in SQLite:
-
-- `persons` — one row per individual (name, gender, birth/death dates,
-  birthplace, photo URL, notes).
-- `relationships` — one row per connection:
-  - `type = 'parent'`: `person1_id` is the parent of `person2_id`.
-  - `type = 'spouse'`: `person1_id` and `person2_id` are partners
-    (undirected).
-
-The tree view is computed client-side from these two tables: people are
-grouped into "couple units" via spouse links, generations are computed
-from parent/child links, and units are positioned left-to-right so that
-children are centered under their parents (a simplified tidy-tree
-layout). Everything is recomputed live from the database — there's no
-separate "layout" table to keep in sync.
-
-## API
-
-All endpoints are under `/api`:
-
-| Method | Path                  | Purpose                          |
-|--------|-----------------------|-----------------------------------|
-| GET    | `/persons`             | List all people                  |
-| POST   | `/persons`              | Create a person                  |
-| GET    | `/persons/:id`          | Get one person                   |
-| PUT    | `/persons/:id`          | Update a person                  |
-| DELETE | `/persons/:id`          | Delete a person (and their relationships) |
-| GET    | `/relationships`        | List all relationships           |
-| POST   | `/relationships`        | Create a relationship            |
-| DELETE | `/relationships/:id`    | Remove a relationship            |
-| GET    | `/tree`                 | Everything needed to render the tree |
-| PUT    | `/tree`                 | Rename the tree                  |
-| POST   | `/upload`               | Upload a profile photo (multipart, field `photo`) |
-
-## Known limitations (MVP)
-
-- The generational layout assumes a mostly "normal" family tree. Very
-  unusual cases (e.g. cousins marrying into the same unit, deeply
-  overlapping blended families) may render with some visual overlap —
-  the underlying data is still stored correctly either way.
-
-## Deploying to Render
-1. Create a **Web Service** on Render pointing to your repository.
-2. Depending on your choice, also create a PostgreSQL DB instance via Render or use an external URL. 
-3. Under Environment Variables for your Web Service, add:
-   - `DATABASE_URL`: Set this to your PostgreSQL connection string (e.g., Internal Database URL if hosted on Render as well).
-   - `SESSION_SECRET`: A secure random string for session cookies.
-
-## Project structure
-
+```text
+Browser
+  |
+  | static files and /api/**
+  v
+Firebase Hosting
+  |                 |
+  | static assets   | /api/** rewrite
+  v                 v
+public/          Cloud Run: lineage-api
+                     |
+                     +-- PostgreSQL application data
+                     +-- PostgreSQL session table
 ```
-family-tree-app/
-├── server.js         # Express app + REST API
-├── db.js             # SQLite schema + connection
-├── package.json
-└── public/
-    ├── index.html
-    ├── style.css
-    ├── app.js         # tree layout algorithm + all UI logic
-    └── uploads/        # uploaded profile photos land here
+
+Firebase Hosting forwards `/api/**` to the `lineage-api` Cloud Run service in `us-central1`. Express uses Firebase's reserved `__session` cookie name, trusts the hosting proxy, and stores session records in PostgreSQL.
+
+## API overview
+
+All endpoints use the `/api` prefix.
+
+| Method | Endpoint | Purpose | Authentication |
+| --- | --- | --- | --- |
+| GET | `/api/auth/me` | Return the current user | Session |
+| POST | `/api/auth/signup` | Create an account | Public |
+| POST | `/api/auth/login` | Sign in | Public |
+| POST | `/api/auth/logout` | End the session | Session |
+| POST | `/api/auth/reset-password` | Reset a password | Public |
+| GET/POST | `/api/persons` | List or create people | Required |
+| GET/PUT/DELETE | `/api/persons/:id` | Read, edit, or delete a person | Required |
+| GET/POST | `/api/relationships` | List or create relationships | Required |
+| DELETE | `/api/relationships/:id` | Delete a relationship | Required |
+| GET/PUT | `/api/tree` | Load or rename a family tree | Required |
+| POST | `/api/upload` | Upload a profile image | Required by UI flow |
+| GET | `/api/export/excel` | Export family data | Required |
+| GET | `/api/duplicates` | Find duplicate people | Required |
+| POST | `/api/merge` | Merge duplicate people | Required |
+
+## Deployment
+
+See [README.deploy.md](README.deploy.md) for the complete Cloud Run and Firebase Hosting procedure, environment configuration, verification commands, rollback guidance, and troubleshooting.
+
+## Repository structure
+
+```text
+.
+|-- public/                Browser application
+|   |-- index.html
+|   |-- style.css
+|   `-- app.js
+|-- db.js                  PostgreSQL pool and schema initialization
+|-- server.js              Express server and API routes
+|-- Dockerfile             Cloud Run container image
+|-- firebase.json          Hosting and /api rewrite configuration
+|-- package.json           Runtime dependencies and scripts
+|-- README.deploy.md       Deployment and operations guide
+`-- CONTRIBUTING.md        Branch and pull-request workflow
 ```
+
+## Operational limitations
+
+- Uploaded images are written to the container filesystem. Cloud Run storage is ephemeral, so production uploads should move to Cloud Storage.
+- The Express API currently contains most routes in one file. Splitting routes and services would improve maintainability as the project grows.
+- Password reset currently accepts an identifier and a new password directly. A production system should use expiring, single-use reset tokens delivered through a verified channel.
+
+## Contributing
+
+Use a feature branch and open a pull request rather than committing directly to `main`. See [CONTRIBUTING.md](CONTRIBUTING.md).
