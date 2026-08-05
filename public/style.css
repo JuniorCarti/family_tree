@@ -398,11 +398,12 @@ body {
 
 /* ============ Side panel ============ */
 .side-panel {
-  position: absolute;
-  top: 0;
+  position: fixed;
+  top: var(--detail-panel-top, 0px);
   right: 0;
   bottom: 0;
   width: 320px;
+  max-height: calc(100dvh - var(--detail-panel-top, 0px));
   background: var(--card);
   border-left: 1px solid var(--card-edge);
   box-shadow: -6px 0 18px rgba(51, 38, 28, 0.12);
@@ -1928,6 +1929,8 @@ body {
 .tree-density-layer circle { vector-effect: non-scaling-stroke; stroke: rgba(255,255,255,.7); stroke-width: 1; }
 .inferred-relationship { opacity: .78; }
 .inferred-relationship:hover { opacity: 1; }
+#relLegend .kinship-legend-item { display: none; }
+#relLegend.kinship-overview-active .kinship-legend-item { display: block; }
 
 .canvas-wrap:fullscreen,
 .shared-tree-screen:fullscreen {

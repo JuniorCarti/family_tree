@@ -283,6 +283,8 @@ function render() {
   const renderedPersons = projected.persons;
   const renderedRelationships = projected.relationships;
   const kinshipToggle = $('#explorerKinshipToggle');
+  const relationLegend = $('#relLegend');
+  relationLegend?.classList.toggle('kinship-overview-active', state.showKinshipLines);
   if (kinshipToggle) {
     kinshipToggle.classList.toggle('active', state.showKinshipLines);
     kinshipToggle.setAttribute('aria-pressed', String(state.showKinshipLines));
@@ -533,9 +535,18 @@ function syncSelectedCard(selectedId) {
   }
 }
 
+function positionSidePanel() {
+  const canvas = $('#canvasWrap');
+  const panel = $('#sidePanel');
+  if (!canvas || !panel) return;
+  const top = Math.max(0, Math.round(canvas.getBoundingClientRect().top));
+  panel.style.setProperty('--detail-panel-top', `${top}px`);
+}
+
 function openSidePanel(id) {
   const p = personById(id);
   if (!p) return;
+  positionSidePanel();
   const {
     parentsOf, childrenOf, spousesOf,
     siblingsOf, grandparentsOf, grandchildrenOf,
@@ -1230,6 +1241,7 @@ function queueTreeViewportResize() {
   viewportResizeFrame = requestAnimationFrame(() => {
     viewportResizeFrame = null;
     syncTreeViewportSize();
+    positionSidePanel();
   });
 }
 window.addEventListener('resize', queueTreeViewportResize, { passive: true });

@@ -196,6 +196,8 @@ test('exploration shell exposes every view, large-tree LOD, minimap, and accessi
   assert.match(appSource, /function renderMinimap/);
   assert.match(appSource, /showKinshipLines: false/);
   assert.match(appSource, /inferred-relationship/);
+  assert.match(appSource, /function positionSidePanel/);
+  assert.match(cssSource, /\.side-panel\s*\{[\s\S]*position: fixed/);
   assert.match(cssSource, /@media \(max-width: 430px\)/);
   assert.match(cssSource, /@media print/);
   assert.match(cssSource, /@media \(prefers-reduced-motion: reduce\)/);
