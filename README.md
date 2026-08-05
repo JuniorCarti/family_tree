@@ -11,6 +11,7 @@ Lineage is a full-stack family tree application for building shared, multi-gener
 ## Features
 
 - Individual email accounts with PostgreSQL-backed sessions
+- KES 500 manual M-Pesa unlock with platform-superadmin approval for new signups
 - Shared family trees with invitation links and role-based access
 - Viewer, contributor, administrator, and owner permissions
 - Multiple family trees per account with an active-tree selector
@@ -19,7 +20,7 @@ Lineage is a full-stack family tree application for building shared, multi-gener
 - Person editing, photo upload, duplicate detection, merging, and Excel export
 - Automatic migration of existing account-owned trees into shared families
 
-See [Family Access and Sharing](docs/FAMILY_ACCESS.md) for the joining flow, role matrix, API, migration details, and security notes.
+See [Family Access and Sharing](docs/FAMILY_ACCESS.md) for family roles and invitations. See [Account Unlock and Superadmin Approval](docs/ACCOUNT_APPROVAL.md) for the KES 500 M-Pesa workflow, review rules, and platform security boundary.
 
 ## Technology
 
@@ -81,6 +82,7 @@ Firebase Hosting
                                  +-- users
                                  +-- families
                                  +-- memberships and invitations
+                                 +-- payment submissions and account approvals
                                  +-- people and relationships by family_id
 ```
 
@@ -91,6 +93,8 @@ Firebase preserves the `__session` cookie for rewritten `/api/**` requests. Expr
 | Prefix | Purpose |
 | --- | --- |
 | `/api/auth` | Signup, login, logout, and current account context |
+| `/api/account` | Lock status and M-Pesa payment-reference submission |
+| `/api/superadmin` | Manual payment review and platform account approval |
 | `/api/families` | List, create, and select family trees |
 | `/api/family` | Members, invitations, and role administration |
 | `/api/persons` | People in the active family |
@@ -117,6 +121,7 @@ npm run test:family-access
 - [Deployment guide](README.deploy.md)
 - [Contribution workflow](CONTRIBUTING.md)
 - [Family access design and operations](docs/FAMILY_ACCESS.md)
+- [Account unlock and superadmin approval](docs/ACCOUNT_APPROVAL.md)
 
 Use a feature branch and pull request rather than committing directly to `main`.
 

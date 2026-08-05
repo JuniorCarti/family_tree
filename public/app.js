@@ -1114,6 +1114,7 @@ function applyUserContext(context) {
   $('#familyRoleBadge').textContent = role;
   document.body.dataset.familyRole = role;
   $('#treeName').readOnly = !hasFamilyRole('admin');
+  $('#superadminBtn').classList.toggle('hidden', !context?.is_superadmin);
 }
 
 async function refreshUserContext() {
@@ -1125,7 +1126,68 @@ async function refreshUserContext() {
 function showAuthenticatedApp(context) {
   applyUserContext(context);
   $('#authScreen').classList.add('hidden');
-  $('#app').classList.remove('hidden');
+  $('#app').classList.add('hidden');
+  $('#approvalScreen').classList.add('hidden');
+
+  if (context?.account_status === 'approved') {
+    $('#app').classList.remove('hidden');
+    return true;
+  }
+
+  $('#approvalScreen').classList.remove('hidden');
+  loadApprovalAccess().catch((error) => showApprovalMessage(error.message));
+  return false;
+}
+
+function showApprovalMessage(message, type = 'error') {
+  const element = $('#approvalMessage');
+  element.textContent = message;
+  element.className = `approval-message ${type}`;
+}
+
+async function loadApprovalAccess() {
+  const data = await api('/account/access');
+  const access = data.access;
+  if (currentUser) {
+    currentUser.account_status = access.account_status;
+    currentUser.is_superadmin = access.is_superadmin;
+  }
+
+  $('#unlockFee').textContent = `KES ${Number(access.unlock_fee_kes).toLocaleString()}`;
+  $('#paymentPhone').textContent = access.payment_phone;
+  const statusLabel = {
+    pending: 'Payment required',
+    payment_submitted: 'Awaiting approval',
+    rejected: 'Action required',
+    approved: 'Approved'
+  }[access.account_status] || access.account_status;
+  $('#approvalStatusBadge').textContent = statusLabel;
+  $('#approvalStatusBadge').className = `approval-status ${access.account_status}`;
+  $('#approvalMessage').className = 'hidden approval-message';
+
+  const form = $('#paymentProofForm');
+  const review = $('#paymentReviewState');
+  form.classList.toggle('hidden', access.account_status === 'payment_submitted' || access.account_status === 'approved');
+  review.className = 'hidden payment-review-state';
+
+  if (access.account_status === 'payment_submitted') {
+    review.textContent = `Payment code ${access.mpesa_reference} was submitted. A superadmin will compare it with the M-Pesa payment before unlocking your account.`;
+    review.className = 'payment-review-state';
+    $('#approvalLead').textContent = 'Your payment details are waiting for manual verification. You can keep this page open or check again later.';
+  } else if (access.account_status === 'rejected') {
+    review.textContent = `The previous submission was rejected: ${access.rejection_reason || access.review_note || 'payment could not be verified'}. Check the details and submit a valid transaction code.`;
+    review.className = 'payment-review-state rejected';
+    $('#approvalLead').textContent = 'Your previous proof could not be verified. Review the reason below and submit the correct transaction code.';
+  } else {
+    $('#approvalLead').textContent = 'Complete the payment below, then submit your M-Pesa transaction code for manual verification.';
+  }
+  return access;
+}
+
+async function refreshApprovalStatus() {
+  const context = await api('/auth/me');
+  const unlocked = showAuthenticatedApp(context);
+  if (unlocked) await loadTree();
 }
 
 function setAuthMode(loginMode) {
@@ -1330,6 +1392,105 @@ $('#copyInviteBtn').addEventListener('click', async () => {
   showFamilyMessage('Invitation link copied.', 'success');
 });
 
+$('#paymentProofForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    $('#submitPaymentBtn').disabled = true;
+    await api('/account/payment-submissions', {
+      method: 'POST',
+      body: JSON.stringify({
+        mpesa_reference: $('#mpesaReference').value.trim(),
+        payer_phone: $('#payerPhone').value.trim() || undefined
+      })
+    });
+    $('#mpesaReference').value = '';
+    showApprovalMessage('Payment details submitted. Your account will unlock after manual verification.', 'success');
+    await loadApprovalAccess();
+  } catch (error) {
+    showApprovalMessage(error.message);
+  } finally {
+    $('#submitPaymentBtn').disabled = false;
+  }
+});
+
+$('#refreshApprovalBtn').addEventListener('click', async () => {
+  try {
+    await refreshApprovalStatus();
+  } catch (error) {
+    showApprovalMessage(error.message);
+  }
+});
+
+$('#approvalLogoutBtn').addEventListener('click', async () => {
+  await api('/auth/logout', { method: 'POST' }).catch(() => {});
+  window.location.reload();
+});
+
+async function loadSuperadminAccounts() {
+  const filter = $('#superadminStatusFilter').value;
+  const data = await api(`/superadmin/accounts?status=${encodeURIComponent(filter)}`);
+  const container = $('#approvalAccountsList');
+  if (!data.accounts.length) {
+    container.innerHTML = '<p class="muted-text" style="text-align:center;padding:24px">No accounts match this filter.</p>';
+    return;
+  }
+  container.innerHTML = data.accounts.map((account) => {
+    const submitted = account.account_status === 'payment_submitted' && account.payment_status === 'submitted';
+    const paymentDetails = account.mpesa_reference
+      ? `<strong>${escapeHtml(account.mpesa_reference)}</strong><div class="approval-payment-meta">KES ${account.amount_kes} · payer ${escapeHtml(account.payer_phone || 'not supplied')} · ${new Date(account.payment_submitted_at).toLocaleString()}</div>`
+      : '<span class="muted-text">No payment proof submitted</span>';
+    return `
+      <div class="approval-account-row">
+        <div>
+          <div class="approval-account-email">${escapeHtml(account.email)}</div>
+          <div class="approval-account-meta">${escapeHtml(account.family_name || 'Unnamed family')} · joined ${new Date(account.created_at).toLocaleDateString()} · ${account.account_status}</div>
+          ${account.rejection_reason ? `<div class="approval-account-meta">Reason: ${escapeHtml(account.rejection_reason)}</div>` : ''}
+        </div>
+        <div>${paymentDetails}</div>
+        <div class="approval-account-actions">
+          ${submitted ? `<button class="btn approve-account-btn" data-user-id="${account.id}" type="button">Approve</button><button class="btn btn-ghost reject-account-btn" data-user-id="${account.id}" type="button">Reject</button>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+
+  $$('.approve-account-btn').forEach((button) => button.addEventListener('click', async () => {
+    if (!confirm('Confirm that the KES 500 M-Pesa payment and transaction code match?')) return;
+    try {
+      await api(`/superadmin/accounts/${button.dataset.userId}/approve`, { method: 'PATCH' });
+      await loadSuperadminAccounts();
+    } catch (error) {
+      $('#superadminMessage').textContent = error.message;
+      $('#superadminMessage').className = 'family-message error';
+    }
+  }));
+
+  $$('.reject-account-btn').forEach((button) => button.addEventListener('click', async () => {
+    const reason = prompt('Why could this payment not be verified? The user will see this reason.');
+    if (!reason) return;
+    try {
+      await api(`/superadmin/accounts/${button.dataset.userId}/reject`, {
+        method: 'PATCH', body: JSON.stringify({ reason })
+      });
+      await loadSuperadminAccounts();
+    } catch (error) {
+      $('#superadminMessage').textContent = error.message;
+      $('#superadminMessage').className = 'family-message error';
+    }
+  }));
+}
+
+$('#superadminBtn').addEventListener('click', async () => {
+  $('#superadminModalOverlay').classList.remove('hidden');
+  $('#superadminMessage').className = 'hidden family-message';
+  try { await loadSuperadminAccounts(); }
+  catch (error) {
+    $('#superadminMessage').textContent = error.message;
+    $('#superadminMessage').className = 'family-message error';
+  }
+});
+$('#superadminModalClose').addEventListener('click', () => $('#superadminModalOverlay').classList.add('hidden'));
+$('#refreshApprovalsBtn').addEventListener('click', loadSuperadminAccounts);
+$('#superadminStatusFilter').addEventListener('change', loadSuperadminAccounts);
 $('#authToggleLink').addEventListener('click', (event) => {
   event.preventDefault();
   setAuthMode(!isLoginMode);
@@ -1408,16 +1569,16 @@ $('#authForm').addEventListener('submit', async (event) => {
         await acceptPendingInvitation();
         context = await api('/auth/me');
       } catch (invitationError) {
-        showAuthenticatedApp(context);
-        await loadTree();
+        const unlocked = showAuthenticatedApp(context);
+        if (unlocked) await loadTree();
         alert(`You signed in, but the invitation was not accepted: ${invitationError.message}`);
         return;
       }
     } else if (!isLoginMode && inviteToken) {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-    showAuthenticatedApp(context);
-    await loadTree();
+    const unlocked = showAuthenticatedApp(context);
+    if (unlocked) await loadTree();
   } catch (error) {
     $('#authError').textContent = error.message;
     $('#authError').classList.remove('hidden');
@@ -1433,17 +1594,17 @@ async function initializeApp() {
   await loadInvitationNotice();
   try {
     let context = await api('/auth/me');
-    showAuthenticatedApp(context);
+    let unlocked = showAuthenticatedApp(context);
     if (inviteToken) {
       try {
         await acceptPendingInvitation();
         context = await api('/auth/me');
-        showAuthenticatedApp(context);
+        unlocked = showAuthenticatedApp(context);
       } catch (invitationError) {
         console.warn(`Invitation was not accepted: ${invitationError.message}`);
       }
     }
-    await loadTree();
+    if (unlocked) await loadTree();
   } catch (error) {
     if (error.message !== 'Unauthorized') console.warn(error.message);
   }

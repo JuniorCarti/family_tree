@@ -99,6 +99,81 @@
     </div>
   </div>
 
+  <!-- ============ Locked Account / Payment Approval ============ -->
+  <div id="approvalScreen" class="approval-screen hidden">
+    <header class="approval-topbar">
+      <div class="brand approval-brand">
+        <span class="seal" aria-hidden="true">
+          <svg viewBox="0 0 40 40" width="30" height="30">
+            <circle cx="20" cy="20" r="18" fill="none" stroke="currentColor" stroke-width="1.4" />
+            <path d="M20 9 L22.5 16.5 L30 16.5 L23.7 21 L26 28.5 L20 24 L14 28.5 L16.3 21 L10 16.5 L17.5 16.5 Z" fill="currentColor" />
+          </svg>
+        </span>
+        <div><strong>Lineage</strong><span>Account approval</span></div>
+      </div>
+      <button class="btn btn-ghost" id="approvalLogoutBtn" type="button">Log out</button>
+    </header>
+
+    <main class="approval-layout">
+      <section class="approval-card payment-card">
+        <span id="approvalStatusBadge" class="approval-status">Pending</span>
+        <p class="eyebrow">ONE-TIME ACCOUNT UNLOCK</p>
+        <h1>Unlock your family archive</h1>
+        <p id="approvalLead">Complete the payment below, then submit your M-Pesa transaction code for manual verification.</p>
+
+        <div class="payment-amount-row">
+          <div><span>Amount</span><strong id="unlockFee">KES 500</strong></div>
+          <div><span>Send Money to</span><strong id="paymentPhone">254113245740</strong></div>
+        </div>
+
+        <ol class="payment-steps">
+          <li>Open M-Pesa and choose <strong>Send Money</strong>.</li>
+          <li>Send exactly <strong>KES 500</strong> to <strong>254113245740</strong>.</li>
+          <li>Enter the transaction code below. Approval is completed manually.</li>
+        </ol>
+
+        <div class="mpesa-safety-note">
+          <strong>Stay safe:</strong> Lineage will never ask for your M-Pesa PIN, account password, or full confirmation message.
+        </div>
+
+        <div id="approvalMessage" class="hidden approval-message"></div>
+        <form id="paymentProofForm" class="payment-proof-form">
+          <div class="field-row">
+            <label>M-Pesa transaction code *</label>
+            <input id="mpesaReference" maxlength="20" autocomplete="off" placeholder="e.g. TH12ABC345" required />
+          </div>
+          <div class="field-row">
+            <label>Payer phone number (optional)</label>
+            <input id="payerPhone" inputmode="tel" placeholder="254712345678" />
+          </div>
+          <button class="btn btn-primary" id="submitPaymentBtn" type="submit">Submit for approval</button>
+        </form>
+        <div id="paymentReviewState" class="hidden payment-review-state"></div>
+        <button class="btn btn-ghost approval-refresh" id="refreshApprovalBtn" type="button">Check approval status</button>
+      </section>
+
+      <section class="locked-preview" aria-label="Preview of unlocked Lineage features">
+        <div class="preview-heading">
+          <div><p class="eyebrow">YOUR ACCESS AFTER APPROVAL</p><h2>A living family record</h2></div>
+          <span class="preview-lock">Locked preview</span>
+        </div>
+        <div class="preview-tree-card">
+          <div class="preview-tree-lines"></div>
+          <div class="preview-person preview-person-root"><span></span><b>Your family</b><small>Root person</small></div>
+          <div class="preview-person preview-person-a"><span></span><b>Parent</b><small>Family details</small></div>
+          <div class="preview-person preview-person-b"><span></span><b>Parent</b><small>Family details</small></div>
+          <div class="preview-person preview-person-c"><span></span><b>Relative</b><small>Shared history</small></div>
+          <div class="preview-person preview-person-d"><span></span><b>Relative</b><small>Shared history</small></div>
+          <div class="preview-watermark"><span>🔒</span> Unlock to build and explore</div>
+        </div>
+        <div class="preview-feature-grid">
+          <article><span>🌳</span><h3>Build your lineage</h3><p>Add generations, life details, photos, and family relationships.</p></article>
+          <article><span>👥</span><h3>Invite relatives</h3><p>Collaborate safely with individual accounts and controlled roles.</p></article>
+          <article><span>📜</span><h3>Preserve and export</h3><p>Search the shared archive and export family records when needed.</p></article>
+        </div>
+      </section>
+    </main>
+  </div>
   <div id="app" class="hidden">
 
     <!-- ============ Top Bar ============ -->
@@ -135,6 +210,7 @@
         <button class="btn btn-primary" id="addPersonBtn">+ Add person</button>
         <button class="btn btn-ghost" id="mergeBtn" style="margin-left: 12px;">Find Duplicates</button>
         <button class="btn btn-ghost" id="exportBtn" style="margin-left: 12px;">Download Excel</button>
+        <button class="btn btn-ghost hidden" id="superadminBtn" style="margin-left: 12px;">Platform approvals</button>
         <button class="btn btn-ghost" id="logoutBtn" style="margin-left: 12px;">Log out</button>
       </div>
     </header>
@@ -236,6 +312,27 @@
       </section>
 
       <div id="familyModalMessage" class="hidden family-message"></div>
+    </div>
+  </div>
+  <!-- ============ Platform Superadmin Modal ============ -->
+  <div class="modal-overlay hidden" id="superadminModalOverlay">
+    <div class="modal superadmin-modal">
+      <div class="modal-header">
+        <div><h3>Platform account approvals</h3><p class="modal-subtitle">Verify M-Pesa payments before unlocking accounts.</p></div>
+        <button class="modal-close" id="superadminModalClose" type="button">&times;</button>
+      </div>
+      <div class="superadmin-toolbar">
+        <select id="superadminStatusFilter">
+          <option value="actionable">Needs attention</option>
+          <option value="payment_submitted">Payment submitted</option>
+          <option value="pending">No payment submitted</option>
+          <option value="rejected">Rejected</option>
+          <option value="approved">Approved</option>
+        </select>
+        <button class="btn btn-ghost" id="refreshApprovalsBtn" type="button">Refresh</button>
+      </div>
+      <div id="superadminMessage" class="hidden family-message"></div>
+      <div id="approvalAccountsList" class="approval-account-list"></div>
     </div>
   </div>
   <!-- ============ Add / Edit Person Modal ============ -->

@@ -59,6 +59,9 @@ Create a local `.env` file. It is ignored by Git.
 ```env
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 SESSION_SECRET=replace_with_a_long_random_secret
+SUPERADMIN_EMAILS=controlled-admin@example.com
+ACCOUNT_UNLOCK_FEE_KES=500
+MPESA_PAYMENT_PHONE=254113245740
 # DATABASE_SSL=false # local PostgreSQL only; omit in production
 ```
 
@@ -110,12 +113,28 @@ gcloud run deploy lineage-api `
   --region us-central1 `
   --platform managed `
   --allow-unauthenticated `
-  --set-env-vars "NODE_ENV=production,DATABASE_URL=$($deployEnv.DATABASE_URL),SESSION_SECRET=$($deployEnv.SESSION_SECRET)" `
+  --set-env-vars "NODE_ENV=production,DATABASE_URL=$($deployEnv.DATABASE_URL),SESSION_SECRET=$($deployEnv.SESSION_SECRET),SUPERADMIN_EMAILS=$($deployEnv.SUPERADMIN_EMAILS),ACCOUNT_UNLOCK_FEE_KES=$($deployEnv.ACCOUNT_UNLOCK_FEE_KES),MPESA_PAYMENT_PHONE=$($deployEnv.MPESA_PAYMENT_PHONE)" `
   --project family-tree-a4c4f
 ```
 
 A successful deployment reports a new revision serving 100 percent of traffic.
 
+## Account approval deployment requirement
+
+Before deploying the signup gate, set `SUPERADMIN_EMAILS` to at least one email controlled by the operator. A matching Lineage account becomes approved and receives platform-superadmin access during startup or signup.
+
+The platform superadmin is separate from a family owner/administrator. It can review account payments but does not automatically gain membership in users' family trees.
+
+The first deployment automatically grandfathers all accounts that existed before the `account_status` column was introduced. New accounts default to `pending`. Verify these invariants after rollout:
+
+- at least one expected account has `is_superadmin = true`;
+- existing accounts have `account_status = 'approved'`;
+- a new test signup receives `account_status = 'pending'`;
+- the new signup receives `403 ACCOUNT_LOCKED` from `/api/tree`;
+- payment instructions show KES 500 and `254113245740`;
+- approval succeeds only after a payment reference is submitted.
+
+Do not deploy without a confirmed bootstrap email, or nobody will be able to process the first approval.
 ## Shared-family migration
 
 The first revision containing family sharing performs an automatic, idempotent PostgreSQL migration before it starts listening:

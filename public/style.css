@@ -919,3 +919,143 @@ body[data-family-role="viewer"] #deletePersonBtn {
     flex-wrap: wrap;
   }
 }
+/* Platform account approval and locked feature preview */
+.approval-screen {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 82% 12%, rgba(184, 134, 59, .16), transparent 28%),
+    linear-gradient(145deg, #f7f0df 0%, #fbf8f0 52%, #eee2c8 100%);
+  color: var(--ink);
+}
+
+.approval-topbar {
+  min-height: 72px;
+  padding: 14px clamp(20px, 5vw, 72px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(143, 101, 38, .2);
+  background: rgba(251, 247, 236, .82);
+  backdrop-filter: blur(12px);
+}
+
+.approval-brand { display: flex; align-items: center; gap: 12px; }
+.approval-brand div { display: flex; flex-direction: column; }
+.approval-brand strong { font-family: 'Fraunces', serif; font-size: 21px; }
+.approval-brand span { color: var(--ink-soft); font-size: 11px; letter-spacing: .09em; text-transform: uppercase; }
+
+.approval-layout {
+  width: min(1180px, calc(100% - 36px));
+  margin: 0 auto;
+  padding: clamp(30px, 5vw, 72px) 0;
+  display: grid;
+  grid-template-columns: minmax(330px, .8fr) minmax(460px, 1.25fr);
+  gap: clamp(28px, 5vw, 64px);
+  align-items: start;
+}
+
+.approval-card {
+  background: rgba(255, 253, 247, .94);
+  border: 1px solid rgba(143, 101, 38, .25);
+  border-radius: 18px;
+  padding: clamp(24px, 4vw, 38px);
+  box-shadow: 0 24px 60px rgba(80, 55, 24, .12);
+}
+
+.approval-card h1 { font: 600 clamp(30px, 4vw, 44px)/1.05 'Fraunces', serif; margin: 8px 0 14px; }
+.approval-card > p:not(.eyebrow) { color: var(--ink-soft); line-height: 1.6; }
+.eyebrow { margin: 0; font: 600 10px/1.4 'IBM Plex Mono', monospace; color: var(--gold-deep); letter-spacing: .13em; }
+
+.approval-status {
+  display: inline-flex;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f0e4c8;
+  color: #74501d;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.approval-status.payment_submitted { background: #fff1c2; color: #735500; }
+.approval-status.rejected { background: #fae2e2; color: #943b3b; }
+.approval-status.approved { background: #dff2e6; color: #286344; }
+
+.payment-amount-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 24px 0;
+}
+.payment-amount-row > div { padding: 15px; background: #f5eddb; border: 1px solid #dfcda5; border-radius: 11px; }
+.payment-amount-row span { display: block; font-size: 10px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .08em; }
+.payment-amount-row strong { display: block; margin-top: 5px; font-size: 18px; color: var(--gold-deep); }
+.payment-steps { margin: 0; padding-left: 22px; color: var(--ink-soft); font-size: 13px; line-height: 1.65; }
+.payment-steps li + li { margin-top: 7px; }
+.mpesa-safety-note { margin: 20px 0; padding: 13px 14px; border-left: 3px solid #3d7c58; background: #edf7f0; color: #315a40; font-size: 12px; line-height: 1.5; }
+.payment-proof-form { display: grid; gap: 14px; }
+.payment-proof-form .btn { width: 100%; padding: 12px; }
+.approval-refresh { width: 100%; margin-top: 10px; }
+.approval-message, .payment-review-state { margin: 14px 0; padding: 12px 14px; border-radius: 9px; font-size: 13px; line-height: 1.5; }
+.approval-message.error { background: #faeaea; color: #8f3535; }
+.approval-message.success, .payment-review-state { background: #fff4d1; color: #6c5312; border: 1px solid #ead28b; }
+.payment-review-state.rejected { background: #faeaea; color: #8f3535; border-color: #edbcbc; }
+
+.locked-preview { position: relative; min-width: 0; }
+.preview-heading { display: flex; justify-content: space-between; gap: 20px; align-items: end; margin-bottom: 18px; }
+.preview-heading h2 { margin: 5px 0 0; font: 600 clamp(26px, 3vw, 36px)/1.1 'Fraunces', serif; }
+.preview-lock { padding: 7px 10px; border-radius: 999px; background: rgba(51, 38, 28, .08); color: var(--ink-soft); font-size: 11px; white-space: nowrap; }
+.preview-tree-card { position: relative; height: 390px; overflow: hidden; border-radius: 18px; border: 1px solid #d8c395; background: radial-gradient(circle at center, #fffdf6, #f1e5cb); box-shadow: inset 0 0 80px rgba(117, 82, 36, .07), 0 20px 45px rgba(80, 55, 24, .1); }
+.preview-tree-card::after { content: ''; position: absolute; inset: 0; background: rgba(244, 236, 217, .32); backdrop-filter: blur(1.4px); pointer-events: none; }
+.preview-tree-lines { position: absolute; left: 50%; top: 82px; width: 58%; height: 190px; transform: translateX(-50%); border-top: 2px solid #b9a474; border-left: 2px solid #b9a474; border-right: 2px solid #b9a474; opacity: .65; }
+.preview-tree-lines::after { content: ''; position: absolute; left: 50%; top: -55px; height: 55px; border-left: 2px solid #b9a474; }
+.preview-person { position: absolute; width: 130px; min-height: 65px; padding: 11px 10px 9px 42px; background: #fffaf0; border: 1px solid #cdb788; border-radius: 10px; box-shadow: 0 8px 18px rgba(85, 58, 22, .1); font-size: 12px; }
+.preview-person span { position: absolute; left: 10px; top: 13px; width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(145deg, #d8c49a, #a98751); }
+.preview-person b, .preview-person small { display: block; }
+.preview-person small { color: #8f806e; margin-top: 3px; font-size: 9px; }
+.preview-person-root { left: 50%; top: 28px; transform: translateX(-50%); }
+.preview-person-a { left: 13%; top: 150px; }
+.preview-person-b { right: 13%; top: 150px; }
+.preview-person-c { left: 22%; bottom: 34px; }
+.preview-person-d { right: 22%; bottom: 34px; }
+.preview-watermark { position: absolute; z-index: 2; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 14px 18px; border-radius: 12px; background: rgba(51, 38, 28, .87); color: #fffaf0; font-size: 12px; box-shadow: 0 12px 30px rgba(30, 20, 10, .25); white-space: nowrap; }
+.preview-watermark span { margin-right: 7px; }
+.preview-feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 14px; }
+.preview-feature-grid article { min-height: 138px; padding: 17px; border: 1px solid #ddcca8; border-radius: 13px; background: rgba(255, 253, 247, .8); }
+.preview-feature-grid article > span { font-size: 21px; filter: grayscale(.2); }
+.preview-feature-grid h3 { margin: 10px 0 5px; font: 600 16px/1.2 'Fraunces', serif; }
+.preview-feature-grid p { margin: 0; color: var(--ink-soft); font-size: 11px; line-height: 1.5; }
+
+.superadmin-modal { width: min(920px, 94vw); max-height: 88vh; overflow-y: auto; }
+.superadmin-toolbar { display: flex; gap: 10px; justify-content: flex-end; margin-bottom: 14px; }
+.superadmin-toolbar select { min-width: 190px; }
+.approval-account-list { display: grid; gap: 12px; }
+.approval-account-row { display: grid; grid-template-columns: minmax(180px, 1.1fr) minmax(180px, .8fr) auto; gap: 14px; align-items: center; padding: 15px; border: 1px solid var(--card-edge); border-radius: 11px; background: var(--parchment); }
+.approval-account-email { font-weight: 650; overflow-wrap: anywhere; }
+.approval-account-meta, .approval-payment-meta { margin-top: 4px; color: var(--ink-soft); font-size: 11px; line-height: 1.45; }
+.approval-account-actions { display: flex; gap: 7px; }
+.approval-account-actions .approve-account-btn { background: #2f7250; color: white; border-color: #2f7250; }
+.approval-account-actions .reject-account-btn { color: #9c3838; border-color: #dbb1b1; }
+
+@media (max-width: 900px) {
+  .approval-layout { grid-template-columns: 1fr; }
+  .locked-preview { order: -1; }
+  .preview-tree-card { height: 330px; }
+  .approval-account-row { grid-template-columns: 1fr; }
+  .approval-account-actions { justify-content: flex-start; }
+}
+
+@media (max-width: 580px) {
+  .approval-layout { width: min(100% - 22px, 1180px); padding-top: 22px; }
+  .approval-topbar { padding: 12px; }
+  .payment-amount-row, .preview-feature-grid { grid-template-columns: 1fr; }
+  .preview-feature-grid article { min-height: auto; }
+  .preview-tree-card { height: 290px; }
+  .preview-person { width: 105px; padding-left: 10px; }
+  .preview-person span { display: none; }
+  .preview-person-a { left: 5%; }
+  .preview-person-b { right: 5%; }
+  .preview-person-c { left: 9%; }
+  .preview-person-d { right: 9%; }
+  .preview-heading { align-items: start; flex-direction: column; }
+}

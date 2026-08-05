@@ -216,7 +216,7 @@ async function acceptInvitation({ token, userId, email, client = db }) {
 }
 
 async function userContext(userId, activeFamilyId, client = db) {
-  const userResult = await client.query('SELECT id, email, family_name FROM users WHERE id = $1', [userId]);
+  const userResult = await client.query('SELECT id, email, family_name, account_status, is_superadmin, approved_at, rejection_reason FROM users WHERE id = $1', [userId]);
   const user = userResult.rows[0];
   if (!user) return null;
   const families = await listFamilies(userId, client);

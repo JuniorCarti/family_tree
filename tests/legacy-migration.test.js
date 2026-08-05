@@ -78,8 +78,9 @@ test('legacy account-owned lineage migrates intact into an owner family', async 
 
   const db = require('../db');
   const familyAccess = require('../family-access');
+  const platformAccess = require('../platform-access');
   try {
-    await Promise.all([db.ready, familyAccess.ready]);
+    await Promise.all([db.ready, familyAccess.ready, platformAccess.ready]);
 
     const family = await db.query(`
       SELECT f.id, f.name, f.owner_user_id, fm.role
@@ -91,6 +92,10 @@ test('legacy account-owned lineage migrates intact into an owner family', async 
     assert.equal(family.rows.length, 1);
     assert.equal(family.rows[0].name, 'Legacy Lineage');
     assert.equal(family.rows[0].role, 'owner');
+
+    const legacyAccess = await platformAccess.getAccountAccess(family.rows[0].owner_user_id);
+    assert.equal(legacyAccess.account_status, 'approved');
+    assert.equal(legacyAccess.is_superadmin, false);
 
     const people = await db.query('SELECT first_name, family_id, created_by_user_id FROM persons ORDER BY id');
     assert.equal(people.rows.length, 2);

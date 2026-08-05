@@ -10,6 +10,7 @@ const pgSession = require('connect-pg-simple')(session);
 const ExcelJS = require('exceljs');
 const db = require('./db');
 const familyAccess = require('./family-access');
+const platformAccess = require('./platform-access');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -96,7 +97,7 @@ app.post('/api/auth/signup', async (req, res, next) => {
 
   const client = await db.pool.connect();
   try {
-    await familyAccess.ready;
+    await Promise.all([familyAccess.ready, platformAccess.ready]);
     await client.query('BEGIN');
     const hash = await bcrypt.hash(password, 10);
     const result = await client.query(
@@ -104,6 +105,7 @@ app.post('/api/auth/signup', async (req, res, next) => {
       [email, hash, familyName || 'Invited family member']
     );
     const user = result.rows[0];
+    await platformAccess.applyBootstrapAccess(user.id, user.email, client);
 
     let activeFamily;
     if (inviteToken) {
@@ -131,7 +133,7 @@ app.post('/api/auth/login', async (req, res, next) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
   try {
-    await familyAccess.ready;
+    await Promise.all([familyAccess.ready, platformAccess.ready]);
     const result = await db.query('SELECT * FROM users WHERE lower(email) = $1', [email]);
     const user = result.rows[0];
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
@@ -160,19 +162,26 @@ app.post('/api/auth/reset-password', (req, res) => {
 });
 
 const requireAuth = familyAccess.requireAuth;
+const requireApproved = platformAccess.requireApproved;
 const requireFamily = familyAccess.requireFamily;
 const requireRole = familyAccess.requireRole;
 
+platformAccess.registerRoutes(app);
+
+// The invitation acceptance endpoint remains available while an account is
+// locked. All family listing, administration, and data routes require approval.
+app.use('/api/families', requireAuth, requireApproved);
+app.use('/api/family', requireAuth, requireApproved);
 familyAccess.registerRoutes(app);
 
-app.use('/api/persons', requireAuth, requireFamily);
-app.use('/api/relationships', requireAuth, requireFamily);
-app.use('/api/tree', requireAuth, requireFamily);
-app.use('/api/export', requireAuth, requireFamily);
-app.use('/api/merge', requireAuth, requireFamily);
-app.use('/api/duplicates', requireAuth, requireFamily);
+app.use('/api/persons', requireAuth, requireApproved, requireFamily);
+app.use('/api/relationships', requireAuth, requireApproved, requireFamily);
+app.use('/api/tree', requireAuth, requireApproved, requireFamily);
+app.use('/api/export', requireAuth, requireApproved, requireFamily);
+app.use('/api/merge', requireAuth, requireApproved, requireFamily);
+app.use('/api/duplicates', requireAuth, requireApproved, requireFamily);
 
-app.post('/api/upload', requireAuth, requireFamily, requireRole('contributor'), upload.single('photo'), (req, res) => {
+app.post('/api/upload', requireAuth, requireApproved, requireFamily, requireRole('contributor'), upload.single('photo'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   res.json({ url: `/uploads/${req.file.filename}` });
 });
@@ -702,7 +711,7 @@ app.use((err, req, res, next) => {
 });
 
 if (require.main === module) {
-  Promise.all([db.ready, familyAccess.ready])
+  Promise.all([db.ready, familyAccess.ready, platformAccess.ready])
     .then(() => {
       app.listen(PORT, () => {
         console.log('Family tree server running at http://localhost:' + PORT);
