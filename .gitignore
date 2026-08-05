@@ -6,3 +6,6 @@ public/uploads/*
 !public/uploads/.gitkeep
 
 .env
+
+.firebase/
+.codebase-memory/

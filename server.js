@@ -6,11 +6,16 @@ const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcrypt');
 const session = require('express-session');
+const pgSession = require('connect-pg-simple')(session);
 const ExcelJS = require('exceljs');
 const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+
+// Firebase Hosting forwards requests through a proxy before they reach
+// Cloud Run. Trust that proxy so secure session cookies are set correctly.
+app.set('trust proxy', 1);
 
 app.use(cors());
 app.use(express.json());
@@ -18,6 +23,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Session configuration
 app.use(session({
+  name: '__session',
+  store: new pgSession({ pool: db.pool, createTableIfMissing: true }),
   secret: process.env.SESSION_SECRET || 'a-very-secure-secret-key-12345',
   resave: false,
   saveUninitialized: false,

@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+.env
+.env.*
+.git
+.gitignore
+.codex
+.codebase-memory
+public/uploads
+Dockerfile
+README.deploy.md
