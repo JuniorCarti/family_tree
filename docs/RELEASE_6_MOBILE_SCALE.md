@@ -93,6 +93,17 @@ Browser QA should cover:
 - no horizontal page scrolling;
 - Timeline and Stories navigation after the tree changes.
 
+## Production rollout
+
+Release 6 was published to Firebase Hosting on 2026-08-06 from implementation commit `c56b78a`.
+
+- Live application: https://family-tree-a4c4f.web.app
+- Firebase project: `family-tree-a4c4f`
+- Hosting now serves `tree-layout.js?v=release6`, `app.js?v=release6`, and `style.css?v=release6`.
+- The Express API and database schema did not change, so the existing Cloud Run revision remained in place.
+- Post-deployment smoke checks returned HTTP 200 for the app shell, layout engine, stylesheet, and anonymous session endpoint.
+- The live app shell references the Release 6 assets; the layout response contains `computeTreeLayout`; the live stylesheet contains the touch canvas rule; anonymous session discovery returns `{"authenticated":false}` without a noisy 401.
+
 ## Deliberate boundaries
 
 Release 6 optimizes layout calculation and interaction but still renders each visible family member as an SVG `foreignObject`. Extremely large archives may eventually benefit from viewport virtualization or a canvas/WebGL renderer. That larger rendering architecture is not required for the current 5,000-person layout contract and should only be introduced with matching accessibility behavior.
