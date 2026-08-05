@@ -1926,6 +1926,8 @@ body {
 .minimap-people { fill: #527565; opacity: .72; }
 .minimap-viewport { fill: rgba(184, 134, 59, .13); stroke: #8f6526; stroke-width: 1.3; }
 .tree-density-layer circle { vector-effect: non-scaling-stroke; stroke: rgba(255,255,255,.7); stroke-width: 1; }
+.inferred-relationship { opacity: .78; }
+.inferred-relationship:hover { opacity: 1; }
 
 .canvas-wrap:fullscreen,
 .shared-tree-screen:fullscreen {

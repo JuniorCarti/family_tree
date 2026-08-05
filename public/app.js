@@ -24,6 +24,7 @@ let state = {
   zoom: 1,
   panX: 0,
   panY: 0,
+  showKinshipLines: false,
 };
 
 // ------------------------------------------------------------------ helpers
@@ -281,6 +282,15 @@ function render() {
   const projected = state.projection || { persons: state.persons, relationships: state.relationships };
   const renderedPersons = projected.persons;
   const renderedRelationships = projected.relationships;
+  const kinshipToggle = $('#explorerKinshipToggle');
+  if (kinshipToggle) {
+    kinshipToggle.classList.toggle('active', state.showKinshipLines);
+    kinshipToggle.setAttribute('aria-pressed', String(state.showKinshipLines));
+    kinshipToggle.textContent = state.showKinshipLines ? 'Hide kinship' : 'Kinship links';
+    kinshipToggle.title = state.selectedId
+      ? 'Show or hide inferred kinship links connected to the selected person'
+      : 'Select a person first to show focused inferred kinship links';
+  }
   const hasPeople = renderedPersons.length > 0;
   $('#emptyState').classList.toggle('hidden', hasPeople);
   if (!hasPeople) {
@@ -339,7 +349,10 @@ function render() {
   // ---- extended connectors (siblings, grandparents, relatives, etc) ----
   for (const r of renderedRelationships) {
     if (!visibleIds.has(r.person1_id) && !visibleIds.has(r.person2_id)) continue;
+    if (!state.showKinshipLines) continue;
     if (['relative', 'sibling', 'grandparent', 'grandchild', 'aunt_uncle', 'niece_nephew', 'cousin'].includes(r.type)) {
+      if (!state.selectedId
+        || (Number(r.person1_id) !== Number(state.selectedId) && Number(r.person2_id) !== Number(state.selectedId))) continue;
       const a = layout.personPos.get(r.person1_id);
       const b = layout.personPos.get(r.person2_id);
       if (a && b) {
@@ -511,6 +524,7 @@ function selectPerson(id) {
   state.selectedId = id;
   syncSelectedCard(id);
   openSidePanel(id);
+  render();
 }
 
 function syncSelectedCard(selectedId) {
@@ -678,6 +692,7 @@ $('#closePanelBtn').addEventListener('click', () => {
   $('#sidePanel').classList.add('hidden');
   state.selectedId = null;
   syncSelectedCard(null);
+  render();
 });
 
 // ------------------------------------------------------------------ pan / zoom
@@ -879,6 +894,11 @@ $('#resetViewBtn').addEventListener('click', fitTreeToViewport);
 $('#treeZoomInBtn').addEventListener('click', () => zoomFromViewportCenter(1));
 $('#treeZoomOutBtn').addEventListener('click', () => zoomFromViewportCenter(-1));
 $('#fitTreeBtn').addEventListener('click', fitTreeToViewport);
+$('#explorerKinshipToggle')?.addEventListener('click', () => {
+  if (!state.selectedId) return;
+  state.showKinshipLines = !state.showKinshipLines;
+  render();
+});
 $('#treeMinimapSvg')?.addEventListener('click', (event) => {
   if (!minimapScale) return;
   const box = event.currentTarget.getBoundingClientRect();

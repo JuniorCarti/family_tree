@@ -186,6 +186,7 @@ test('exploration shell exposes every view, large-tree LOD, minimap, and accessi
   }
   assert.match(htmlSource, /id="treeMinimapSvg"/);
   assert.match(htmlSource, /id="shareTreeModalOverlay"/);
+  assert.match(htmlSource, /id="explorerKinshipToggle"/);
   assert.match(explorerSource, /shortestRelationshipPath/);
   assert.match(explorerSource, /ancestorSlots/);
   assert.match(explorerSource, /\/api\/exploration\/chart\.pdf/);
@@ -193,6 +194,8 @@ test('exploration shell exposes every view, large-tree LOD, minimap, and accessi
   assert.match(appSource, /renderedPersons\.length > 300/);
   assert.match(appSource, /state\.zoom < 0\.075/);
   assert.match(appSource, /function renderMinimap/);
+  assert.match(appSource, /showKinshipLines: false/);
+  assert.match(appSource, /inferred-relationship/);
   assert.match(cssSource, /@media \(max-width: 430px\)/);
   assert.match(cssSource, /@media print/);
   assert.match(cssSource, /@media \(prefers-reduced-motion: reduce\)/);

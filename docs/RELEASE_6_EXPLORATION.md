@@ -29,6 +29,8 @@ The tree now derives kinship from recorded parent links across every surface. Sh
 
 Derived edges carry an **inferred** marker, have no database ID, and are never silently inserted into the relationships table. An explicitly recorded relationship suppresses the matching inferred edge, so the family record stays free of duplicates. Removing or changing a parent link automatically changes the derived kinship shown by the application.
 
+To keep large trees understandable, the primary Family canvas starts with only the structural parent/child and spouse connectors. Select a person and choose **Kinship links** to reveal only that person's secondary sibling, grandparent, aunt/uncle, niece/nephew, cousin, or other-relative connectors. The profile panel remains the clearest complete list of those relationships, with inferred entries labelled as such.
+
 ## Navigation and presentation
 
 - The Family view retains drag, wheel, pinch, zoom, and fit controls.
