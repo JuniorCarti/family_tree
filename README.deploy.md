@@ -12,6 +12,7 @@ This guide deploys the Express API to Google Cloud Run and the static browser ap
 | Container image | `gcr.io/family-tree-a4c4f/lineage-api` |
 | Firebase Hosting site | `family-tree-a4c4f` |
 | Public site | https://family-tree-a4c4f.web.app |
+| Private media bucket | `family-tree-a4c4f-media` |
 
 ## Architecture and authentication
 
@@ -70,7 +71,7 @@ MPESA_PAYMENT_PHONE=254113245740
 - Never commit `.env` or paste secret values into documentation.
 - PostgreSQL TLS is enabled by default. Use `DATABASE_SSL=false` only for a trusted local database without TLS.
 
-For a mature production environment, store these values in Google Secret Manager and bind them to Cloud Run instead of passing them on the command line.
+Production uses Google Secret Manager for `DATABASE_URL`, `SESSION_SECRET`, and `SMTP_PASSWORD`. See [Release 1: Trust Foundation](docs/RELEASE_1_TRUST.md) for the configured secret names, private bucket, SMTP settings, and rollout checks. Do not replace those secret references with plain command-line values.
 
 ## One-time Google Cloud setup
 
@@ -273,6 +274,9 @@ gcloud run services update-traffic lineage-api \
 
 Firebase Hosting releases can be reviewed and rolled back from the Firebase console.
 
-## Known production limitation
+## Current production notes
 
-Profile images are currently written under `public/uploads` inside the Cloud Run container. That filesystem is ephemeral. Move production uploads to Cloud Storage before treating them as durable user data.
+- New media is stored privately in `family-tree-a4c4f-media` and streamed only after active-family authorization.
+- Existing legacy `/uploads` photos are protected by account and family-membership checks.
+- Gmail SMTP credentials are read from Secret Manager; verification and password-reset links use the Firebase Hosting public URL.
+- The remaining production dependency audit findings are moderate transitive `uuid` advisories. The available automated fix proposes breaking dependency downgrades and has not been forced.
