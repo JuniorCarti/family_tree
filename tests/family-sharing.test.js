@@ -32,6 +32,12 @@ test('payment approval gates shared-family access and roles', async (t) => {
   await Promise.all([db.ready, familyAccess.ready, platformAccess.ready]);
   t.after(async () => db.pool.end());
 
+  const anonymousSession = await request(app).get('/api/auth/session');
+  assert.equal(anonymousSession.status, 200, anonymousSession.text);
+  assert.deepEqual(anonymousSession.body, { authenticated: false });
+  const protectedMe = await request(app).get('/api/auth/me');
+  assert.equal(protectedMe.status, 401, protectedMe.text);
+
   const shell = await request(app).get('/');
   assert.equal(shell.status, 200, shell.text);
   assert.match(shell.text, /Unlock your family archive/);
@@ -48,6 +54,10 @@ test('payment approval gates shared-family access and roles', async (t) => {
   assert.equal(ownerSignup.status, 201, ownerSignup.text);
   assert.equal(ownerSignup.body.account_status, 'approved');
   assert.equal(ownerSignup.body.is_superadmin, true);
+  const ownerSession = await owner.get('/api/auth/session');
+  assert.equal(ownerSession.status, 200, ownerSession.text);
+  assert.equal(ownerSession.body.authenticated, true);
+  assert.equal(ownerSession.body.context.id, ownerSignup.body.id);
   assert.equal(ownerSignup.body.active_family_role, 'owner');
   const originalFamilyId = ownerSignup.body.active_family_id;
 

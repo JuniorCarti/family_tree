@@ -1596,7 +1596,15 @@ $('#logoutBtn').addEventListener('click', async () => {
 async function initializeApp() {
   await loadInvitationNotice();
   try {
-    let context = await api('/auth/me');
+    const session = await api('/auth/session');
+    if (!session.authenticated) {
+      currentUser = null;
+      $('#app').classList.add('hidden');
+      $('#approvalScreen').classList.add('hidden');
+      $('#authScreen').classList.remove('hidden');
+      return;
+    }
+    let context = session.context;
     let unlocked = showAuthenticatedApp(context);
     if (inviteToken) {
       try {

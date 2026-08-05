@@ -70,6 +70,18 @@ async function getPerson(id, familyId) {
 // ---------------------------------------------------------------------------
 // Auth Routes
 // ---------------------------------------------------------------------------
+app.get('/api/auth/session', async (req, res, next) => {
+  if (!req.session.userId) return res.json({ authenticated: false });
+  try {
+    const context = await familyAccess.userContext(req.session.userId, req.session.activeFamilyId);
+    if (!context) return res.json({ authenticated: false });
+    req.session.activeFamilyId = context.active_family_id;
+    res.json({ authenticated: true, context });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/auth/me', async (req, res, next) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Not logged in' });
   try {
