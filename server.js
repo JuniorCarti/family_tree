@@ -14,6 +14,7 @@ const platformAccess = require('./platform-access');
 const trustAccess = require('./trust-access');
 const mediaStorage = require('./media-storage');
 const privacyAccess = require('./privacy-access');
+const archiveAccess = require('./archive-access');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -217,7 +218,7 @@ app.use('/api/account', requireAuth, requireApproved);
 
 app.get('/api/account/data-export', async (req, res, next) => {
   try {
-    const [user, memberships, persons, relationships, payments] = await Promise.all([
+    const [user, memberships, persons, relationships, payments, lifeEvents, stories, comments] = await Promise.all([
       db.query(`SELECT id, email, family_name, created_at, email_verified_at, account_status,
                        approved_at
                 FROM users WHERE id = $1`, [req.session.userId]),
@@ -233,7 +234,20 @@ app.get('/api/account/data-export', async (req, res, next) => {
                 FROM relationships WHERE created_by_user_id = $1 ORDER BY id`, [req.session.userId]),
       db.query(`SELECT id, amount_kes, payment_phone, payer_phone, mpesa_reference,
                        status, review_note, reviewed_at, created_at
-                FROM account_payment_submissions WHERE user_id = $1 ORDER BY created_at`, [req.session.userId])
+                FROM account_payment_submissions WHERE user_id = $1 ORDER BY created_at`, [req.session.userId]),
+      db.query(`SELECT id, family_id, person_id, event_type, title, event_date, end_date,
+                       place, description, source_title, source_url, visibility, created_at,
+                       updated_at, deleted_at
+                FROM life_events WHERE created_by_user_id = $1 ORDER BY id`, [req.session.userId]),
+      db.query(`SELECT s.id, s.family_id, s.title, s.body, s.story_date, s.place, s.visibility,
+                       s.created_at, s.updated_at, s.deleted_at,
+                       COALESCE(array_agg(sp.person_id) FILTER (WHERE sp.person_id IS NOT NULL), '{}') AS person_ids
+                FROM family_stories s
+                LEFT JOIN family_story_people sp ON sp.story_id = s.id
+                WHERE s.created_by_user_id = $1
+                GROUP BY s.id ORDER BY s.id`, [req.session.userId]),
+      db.query(`SELECT id, story_id, family_id, body, created_at, deleted_at
+                FROM family_story_comments WHERE created_by_user_id = $1 ORDER BY id`, [req.session.userId])
     ]);
     const payload = {
       exported_at: new Date().toISOString(),
@@ -241,7 +255,10 @@ app.get('/api/account/data-export', async (req, res, next) => {
       family_memberships: memberships.rows,
       payment_submissions: payments.rows,
       contributed_people: persons.rows,
-      contributed_relationships: relationships.rows
+      contributed_relationships: relationships.rows,
+      contributed_life_events: lifeEvents.rows,
+      contributed_stories: stories.rows,
+      contributed_story_comments: comments.rows
     };
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', 'attachment; filename=lineage-account-data.json');
@@ -371,6 +388,8 @@ app.use('/api/merge', requireAuth, requireApproved, requireFamily);
 app.use('/api/duplicates', requireAuth, requireApproved, requireFamily);
 app.use('/api/media', requireAuth, requireApproved, requireFamily);
 app.use('/api/recycle-bin', requireAuth, requireApproved, requireFamily);
+app.use('/api/archive', requireAuth, requireApproved, requireFamily);
+archiveAccess.registerRoutes(app);
 
 app.post('/api/upload', requireAuth, requireApproved, requireFamily, requireRole('contributor'), mediaStorage.upload.single('photo'), async (req, res, next) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -997,7 +1016,7 @@ app.use((err, req, res, next) => {
 });
 
 if (require.main === module) {
-  Promise.all([db.ready, familyAccess.ready, platformAccess.ready, trustAccess.ready, mediaStorage.ready, privacyAccess.ready])
+  Promise.all([db.ready, familyAccess.ready, platformAccess.ready, trustAccess.ready, mediaStorage.ready, privacyAccess.ready, archiveAccess.ready])
     .then(() => {
       app.listen(PORT, () => {
         console.log('Family tree server running at http://localhost:' + PORT);

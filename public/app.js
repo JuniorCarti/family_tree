@@ -79,6 +79,7 @@ async function loadTree() {
   $('#treeName').readOnly = !hasFamilyRole('admin');
   $('#personCount').textContent = `${state.persons.length} ${state.persons.length === 1 ? 'person' : 'people'}`;
   render();
+  await window.loadArchiveOverview?.();
 }
 
 // ------------------------------------------------------------------ relationship maps
@@ -649,6 +650,10 @@ function openSidePanel(id) {
       ${p.can_edit ? '<button class="btn btn-ghost" id="editPersonBtn">Edit</button>' : ''}
       <button class="btn btn-ghost" id="focusPersonBtn">Center in view</button>
     </div>
+    <div class="panel-actions archive-profile-actions">
+      <button class="btn btn-ghost" id="personTimelineBtn">View life timeline</button>
+      ${p.can_edit ? '<button class="btn btn-ghost" id="personAddEventBtn">Add life event</button>' : ''}
+    </div>
 
     ${relSection('Parents', parents, id, 'parent_of_target')}
     ${relSection('Spouse / Partner', spouses, id, 'spouse_of_target')}
@@ -661,6 +666,8 @@ function openSidePanel(id) {
 
   $('#editPersonBtn')?.addEventListener('click', () => openPersonModal(p));
   $('#focusPersonBtn').addEventListener('click', () => centerOnPerson(id));
+  $('#personTimelineBtn').addEventListener('click', () => window.openTimelineForPerson?.(id));
+  $('#personAddEventBtn')?.addEventListener('click', () => window.openEventForPerson?.(id));
 
   panel.querySelectorAll('.rel-name').forEach((el) => {
     el.addEventListener('click', () => {

@@ -11,7 +11,7 @@
     href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
     rel="stylesheet">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/style.css?v=85c6b06" />
+  <link rel="stylesheet" href="/style.css?v=release3" />
 </head>
 
 <body>
@@ -244,6 +244,23 @@
       </div>
     </header>
 
+    <nav class="workspace-nav" aria-label="Family archive views">
+      <div class="workspace-tabs">
+        <button class="workspace-tab active" type="button" data-view="tree" aria-selected="true">
+          <span class="workspace-tab-icon">⌘</span><span>Family tree</span>
+        </button>
+        <button class="workspace-tab" type="button" data-view="timeline" aria-selected="false">
+          <span class="workspace-tab-icon">◷</span><span>Timeline</span>
+          <span class="workspace-count" id="timelineNavCount">0</span>
+        </button>
+        <button class="workspace-tab" type="button" data-view="stories" aria-selected="false">
+          <span class="workspace-tab-icon">¶</span><span>Stories</span>
+          <span class="workspace-count" id="storiesNavCount">0</span>
+        </button>
+      </div>
+      <div class="workspace-nav-note"><span></span>Private family archive</div>
+    </nav>
+
     <!-- ============ Canvas ============ -->
     <main class="canvas-wrap" id="canvasWrap">
       <div id="emptyState" class="empty-state hidden">
@@ -284,6 +301,63 @@
             <line x1="0" y1="2" x2="28" y2="2" stroke="#94a3b8" stroke-width="1.8" stroke-dasharray="4,6" />
           </svg>Other Relative</div>
       </div>
+    </main>
+
+    <!-- ============ Family Timeline ============ -->
+    <main class="archive-view hidden" id="timelineView">
+      <section class="archive-hero timeline-hero">
+        <div class="archive-hero-copy">
+          <p class="archive-kicker">FAMILY CHRONICLE</p>
+          <h1>The moments that shaped <em>your lineage</em></h1>
+          <p>Trace migrations, marriages, milestones, and everyday turning points across generations.</p>
+        </div>
+        <div class="archive-hero-actions">
+          <button class="btn archive-primary-action" id="addEventBtn" type="button">Add a life event</button>
+          <button class="btn archive-secondary-action" id="archiveExportBtn" type="button">Export archive</button>
+        </div>
+        <div class="archive-stats" id="archiveStats">
+          <article><strong id="archiveEventCount">0</strong><span>life events</span></article>
+          <article><strong id="archiveStoryCount">0</strong><span>family stories</span></article>
+          <article><strong id="archiveYearsSpan">0</strong><span>years preserved</span></article>
+        </div>
+      </section>
+      <section class="archive-toolbar">
+        <div class="archive-search"><span>⌕</span><input id="timelineSearch" type="search" placeholder="Search people, places, and moments" /></div>
+        <select id="timelinePersonFilter" aria-label="Filter timeline by person"><option value="">All family members</option></select>
+        <select id="timelineTypeFilter" aria-label="Filter timeline by event type">
+          <option value="">All event types</option>
+          <option value="birth">Birth</option><option value="education">Education</option>
+          <option value="marriage">Marriage</option><option value="work">Work</option>
+          <option value="migration">Migration</option><option value="milestone">Milestone</option>
+          <option value="death">Death</option><option value="other">Other</option>
+        </select>
+      </section>
+      <section class="timeline-shell">
+        <aside class="timeline-index">
+          <p>CHRONICLE INDEX</p>
+          <div id="timelineYearIndex"></div>
+        </aside>
+        <div class="timeline-feed" id="timelineFeed"></div>
+      </section>
+    </main>
+
+    <!-- ============ Family Stories ============ -->
+    <main class="archive-view stories-view hidden" id="storiesView">
+      <section class="stories-masthead">
+        <div>
+          <p class="archive-kicker">THE FAMILY JOURNAL</p>
+          <h1>Stories worth carrying forward.</h1>
+          <p>Memories in the voices of the people who lived them—preserved together, for everyone who comes next.</p>
+        </div>
+        <button class="btn archive-primary-action" id="addStoryBtn" type="button">Write a story</button>
+      </section>
+      <section class="stories-toolbar">
+        <div class="archive-search"><span>⌕</span><input id="storiesSearch" type="search" placeholder="Search the family journal" /></div>
+        <select id="storiesPersonFilter" aria-label="Filter stories by person"><option value="">All people</option></select>
+        <span id="storiesResultCount" class="stories-result-count">0 stories</span>
+      </section>
+      <section id="storiesFeatured" class="stories-featured hidden"></section>
+      <section class="story-grid" id="storyGrid"></section>
     </main>
 
     <!-- ============ Side Detail Panel ============ -->
@@ -496,6 +570,81 @@
     </div>
   </div>
 
+  <!-- ============ Life Event Modal ============ -->
+  <div class="modal-overlay hidden" id="eventModalOverlay">
+    <div class="modal archive-editor-modal">
+      <div class="modal-header">
+        <div><p class="archive-kicker">LIFE EVENT</p><h3 id="eventModalTitle">Add a moment</h3></div>
+        <button class="modal-close" id="eventModalClose" type="button">&times;</button>
+      </div>
+      <form id="eventForm">
+        <div class="field-grid archive-form-grid">
+          <div class="field-row span-2"><label>Person *</label><select id="eventPerson" required></select></div>
+          <div class="field-row"><label>Event type *</label><select id="eventType" required>
+            <option value="birth">Birth</option><option value="education">Education</option>
+            <option value="marriage">Marriage</option><option value="work">Work</option>
+            <option value="migration">Migration</option><option value="milestone" selected>Milestone</option>
+            <option value="death">Death</option><option value="other">Other</option>
+          </select></div>
+          <div class="field-row"><label>Visibility</label><select id="eventVisibility">
+            <option value="family">Everyone in this family</option><option value="contributors">Contributors and admins</option>
+            <option value="admins">Admins and owner</option><option value="private">Only me</option>
+          </select></div>
+          <div class="field-row span-2"><label>Event title *</label><input id="eventTitle" maxlength="180" placeholder="e.g. Moved to Nairobi" required /></div>
+          <div class="field-row"><label>Start date or year</label><input id="eventDate" maxlength="50" placeholder="1968 or 1968-04-12" /></div>
+          <div class="field-row"><label>End date (optional)</label><input id="eventEndDate" maxlength="50" placeholder="1972" /></div>
+          <div class="field-row span-2"><label>Place</label><input id="eventPlace" maxlength="255" placeholder="Village, town, or country" /></div>
+          <div class="field-row span-2"><label>What happened?</label><textarea id="eventDescription" rows="5" maxlength="10000" placeholder="Add the details future generations should know."></textarea></div>
+          <div class="field-row"><label>Source title</label><input id="eventSourceTitle" maxlength="255" placeholder="Certificate, interview, archive..." /></div>
+          <div class="field-row"><label>Source link</label><input id="eventSourceUrl" type="url" placeholder="https://..." /></div>
+        </div>
+        <div id="eventFormMessage" class="hidden family-message"></div>
+        <div class="modal-footer">
+          <button class="btn btn-text hidden" id="deleteEventBtn" type="button">Delete event</button>
+          <div class="modal-footer-right"><button class="btn btn-ghost" id="cancelEventBtn" type="button">Cancel</button><button class="btn btn-primary" type="submit">Save event</button></div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ Story Editor Modal ============ -->
+  <div class="modal-overlay hidden" id="storyModalOverlay">
+    <div class="modal archive-editor-modal story-editor-modal">
+      <div class="modal-header">
+        <div><p class="archive-kicker">FAMILY JOURNAL</p><h3 id="storyModalTitle">Write a family story</h3></div>
+        <button class="modal-close" id="storyModalClose" type="button">&times;</button>
+      </div>
+      <form id="storyForm">
+        <div class="story-writing-sheet">
+          <input id="storyTitle" class="story-title-input" maxlength="220" placeholder="Give this memory a title..." required />
+          <textarea id="storyBody" class="story-body-input" maxlength="20000" placeholder="Tell the story in your own words..." required></textarea>
+        </div>
+        <div class="field-grid archive-form-grid story-meta-grid">
+          <div class="field-row"><label>When did this happen?</label><input id="storyDate" maxlength="50" placeholder="1987 or Summer 1987" /></div>
+          <div class="field-row"><label>Where?</label><input id="storyPlace" maxlength="255" placeholder="Place or family home" /></div>
+          <div class="field-row span-2"><label>People in this story</label><div id="storyPeoplePicker" class="people-picker"></div></div>
+          <div class="field-row span-2"><label>Visibility</label><select id="storyVisibility">
+            <option value="family">Everyone in this family</option><option value="contributors">Contributors and admins</option>
+            <option value="admins">Admins and owner</option><option value="private">Only me</option>
+          </select></div>
+        </div>
+        <div id="storyFormMessage" class="hidden family-message"></div>
+        <div class="modal-footer">
+          <button class="btn btn-text hidden" id="deleteStoryBtn" type="button">Delete story</button>
+          <div class="modal-footer-right"><button class="btn btn-ghost" id="cancelStoryBtn" type="button">Cancel</button><button class="btn btn-primary" type="submit">Publish story</button></div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ Story Reader Modal ============ -->
+  <div class="modal-overlay hidden" id="storyReaderOverlay">
+    <article class="modal story-reader">
+      <button class="story-reader-close" id="storyReaderClose" type="button" aria-label="Close">&times;</button>
+      <div id="storyReaderContent"></div>
+    </article>
+  </div>
+
   <!-- ============ Privacy and Account Modal ============ -->
   <div class="modal-overlay hidden" id="privacyModalOverlay">
     <div class="modal privacy-modal">
@@ -541,7 +690,8 @@
     </div>
   </div>
 
-  <script src="/app.js?v=85c6b06"></script>
+  <script src="/app.js?v=release3"></script>
+  <script src="/archive.js?v=release3"></script>
 </body>
 
 </html>

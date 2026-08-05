@@ -25,6 +25,7 @@ const db = require('../db');
 const familyAccess = require('../family-access');
 const platformAccess = require('../platform-access');
 const privacyAccess = require('../privacy-access');
+const archiveAccess = require('../archive-access');
 
 async function signup(agent, body) {
   return agent.post('/api/auth/signup').send({ password, ...body });
@@ -35,7 +36,7 @@ async function approve(superadmin, userId) {
 }
 
 test('payment approval gates shared-family access and roles', async (t) => {
-  await Promise.all([db.ready, familyAccess.ready, platformAccess.ready, privacyAccess.ready]);
+  await Promise.all([db.ready, familyAccess.ready, platformAccess.ready, privacyAccess.ready, archiveAccess.ready]);
   t.after(async () => {
     await db.pool.end();
     fs.rmSync(mediaTestDir, { recursive: true, force: true });
@@ -258,6 +259,102 @@ test('payment approval gates shared-family access and roles', async (t) => {
   assert.equal(accountExport.body.account.email, viewerEmail);
   assert.equal(accountExport.body.contributed_people.some((person) => person.id === ownerOnly.body.id), false);
 
+  const ancestor = await owner.post('/api/persons').send({
+    first_name: 'Wanjiku',
+    last_name: 'Archive',
+    birth_date: '1932-01-01',
+    death_date: '2008-04-02',
+    life_status: 'deceased',
+    visibility: 'family'
+  });
+  assert.equal(ancestor.status, 201, ancestor.text);
+
+  const migrationEvent = await owner.post('/api/archive/events').send({
+    person_id: ancestor.body.id,
+    event_type: 'migration',
+    title: 'Moved to Nairobi',
+    event_date: '1958',
+    place: 'Nairobi, Kenya',
+    description: 'Started a new chapter for the family.',
+    source_title: 'Recorded family interview',
+    source_url: 'https://example.test/family-interview',
+    visibility: 'family'
+  });
+  assert.equal(migrationEvent.status, 201, migrationEvent.text);
+  assert.equal(migrationEvent.body.person_name, 'Wanjiku Archive');
+
+  const livingEvent = await owner.post('/api/archive/events').send({
+    person_id: livingPrivateDetails.body.id,
+    event_type: 'education',
+    title: 'Graduated from university',
+    event_date: '2015',
+    description: 'Sensitive living-person detail',
+    visibility: 'family'
+  });
+  assert.equal(livingEvent.status, 201, livingEvent.text);
+
+  const viewerEvents = await viewer.get('/api/archive/events');
+  assert.equal(viewerEvents.status, 200, viewerEvents.text);
+  assert.ok(viewerEvents.body.events.some((event) => event.id === migrationEvent.body.id));
+  assert.equal(viewerEvents.body.events.some((event) => event.id === livingEvent.body.id), false);
+  const contributorPrivateEvent = await contributor.post('/api/archive/events').send({
+    person_id: ownerOnly.body.id,
+    event_type: 'other',
+    title: 'Should be blocked'
+  });
+  assert.equal(contributorPrivateEvent.status, 403, contributorPrivateEvent.text);
+
+  const familyStory = await owner.post('/api/archive/stories').send({
+    title: 'The journey to the city',
+    body: 'Wanjiku arrived with one suitcase and the address of a cousin. The family still tells the story of that first evening.',
+    story_date: '1958',
+    place: 'Nairobi',
+    visibility: 'family',
+    person_ids: [ancestor.body.id]
+  });
+  assert.equal(familyStory.status, 201, familyStory.text);
+  assert.equal(familyStory.body.people[0].id, ancestor.body.id);
+
+  const sensitiveStory = await owner.post('/api/archive/stories').send({
+    title: 'A living memory',
+    body: 'This story must inherit the living person privacy boundary.',
+    story_date: '2020',
+    visibility: 'family',
+    person_ids: [livingPrivateDetails.body.id]
+  });
+  assert.equal(sensitiveStory.status, 201, sensitiveStory.text);
+
+  const viewerStories = await viewer.get('/api/archive/stories');
+  assert.equal(viewerStories.status, 200, viewerStories.text);
+  assert.ok(viewerStories.body.stories.some((story) => story.id === familyStory.body.id));
+  assert.equal(viewerStories.body.stories.some((story) => story.id === sensitiveStory.body.id), false);
+  const blockedStoryEdit = await contributor.put(`/api/archive/stories/${familyStory.body.id}`).send({
+    title: 'Unauthorized rewrite',
+    body: familyStory.body.body,
+    visibility: 'family',
+    person_ids: [ancestor.body.id]
+  });
+  assert.equal(blockedStoryEdit.status, 403, blockedStoryEdit.text);
+
+  const viewerComment = await viewer.post(`/api/archive/stories/${familyStory.body.id}/comments`).send({
+    body: 'I remember hearing this from my grandmother.'
+  });
+  assert.equal(viewerComment.status, 201, viewerComment.text);
+  const storyReader = await viewer.get(`/api/archive/stories/${familyStory.body.id}`);
+  assert.equal(storyReader.status, 200, storyReader.text);
+  assert.equal(storyReader.body.comments.length, 1);
+  const hiddenStoryReader = await viewer.get(`/api/archive/stories/${sensitiveStory.body.id}`);
+  assert.equal(hiddenStoryReader.status, 404, hiddenStoryReader.text);
+
+  const archiveOverview = await viewer.get('/api/archive/overview');
+  assert.equal(archiveOverview.status, 200, archiveOverview.text);
+  assert.equal(archiveOverview.body.stats.events, 1);
+  assert.equal(archiveOverview.body.stats.stories, 1);
+  const archiveExport = await viewer.get('/api/archive/export');
+  assert.equal(archiveExport.status, 200, archiveExport.text);
+  assert.equal(archiveExport.body.events.some((event) => event.id === livingEvent.body.id), false);
+  assert.equal(archiveExport.body.stories.some((story) => story.id === sensitiveStory.body.id), false);
+
   const members = await owner.get('/api/family/members');
   assert.equal(members.status, 200, members.text);
   assert.deepEqual(new Set(members.body.members.map((member) => member.role)), new Set(['owner', 'viewer', 'contributor']));
@@ -268,7 +365,7 @@ test('payment approval gates shared-family access and roles', async (t) => {
   assert.equal(emptySecondTree.body.persons.length, 0);
   await owner.post(`/api/families/${originalFamilyId}/select`);
   const originalTree = await owner.get('/api/tree');
-  assert.equal(originalTree.body.persons.length, 4);
+  assert.equal(originalTree.body.persons.length, 5);
 
   const audit = await owner.get('/api/family/audit');
   assert.equal(audit.status, 200, audit.text);
