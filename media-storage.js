@@ -26,19 +26,23 @@ async function initializeMedia() {
       family_id INTEGER NOT NULL,
       uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       object_name TEXT NOT NULL,
-      mime_type VARCHAR(100) NOT NULL,
-      size_bytes INTEGER NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT now()
+        mime_type VARCHAR(100) NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        original_name TEXT,
+        purpose VARCHAR(40) NOT NULL DEFAULT 'profile',
+        created_at TIMESTAMP NOT NULL DEFAULT now()
     )
   `);
+  await db.query("ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS original_name TEXT");
+  await db.query("ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS purpose VARCHAR(40) NOT NULL DEFAULT 'profile'");
   await db.query('CREATE INDEX IF NOT EXISTS idx_media_family ON media_assets(family_id, created_at DESC)');
 }
 const ready = initializeMedia();
 
-async function save(req, file) {
+async function save(req, file, options = {}) {
   await ready;
   const id = crypto.randomUUID();
-  const extension = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif' }[file.mimetype];
+  const extension = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'image/tiff': '.tiff', 'application/pdf': '.pdf', 'text/plain': '.txt' }[file.mimetype] || '';
   const objectName = `families/${req.family.id}/${id}${extension}`;
   const cloudFile = storage ? storage.bucket(bucketName).file(objectName) : null;
   const localPath = path.join(localDir, `${id}${extension}`);
@@ -48,7 +52,7 @@ async function save(req, file) {
     } else {
       fs.writeFileSync(localPath, file.buffer);
     }
-    await db.query('INSERT INTO media_assets (id, family_id, uploaded_by, object_name, mime_type, size_bytes) VALUES ($1, $2, $3, $4, $5, $6)', [id, req.family.id, req.session.userId, objectName, file.mimetype, file.size]);
+    await db.query('INSERT INTO media_assets (id, family_id, uploaded_by, object_name, mime_type, size_bytes, original_name, purpose) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)', [id, req.family.id, req.session.userId, objectName, file.mimetype, file.size, options.originalName || file.originalname || null, options.purpose || 'profile']);
   } catch (error) {
     if (cloudFile) await cloudFile.delete({ ignoreNotFound: true }).catch(() => {});
     else fs.rmSync(localPath, { force: true });
@@ -70,6 +74,12 @@ async function stream(req, res) {
   if (person) {
     const visible = privacyAccess.serializePerson(person, req.session.userId, req.family.role);
     if (!visible || visible.privacy_redacted) return res.status(404).json({ error: 'Media not found' });
+  } else if (asset.purpose === 'evidence') {
+    const citation = await db.query('SELECT citation_id FROM evidence_media WHERE media_id = $1 LIMIT 1', [asset.id]);
+    if (!citation.rows[0]) return res.status(404).json({ error: 'Media not found' });
+    const evidenceAccess = require('./evidence-access');
+    const allowed = await evidenceAccess.subjectVisibleForCitation(citation.rows[0].citation_id, req);
+    if (!allowed) return res.status(404).json({ error: 'Media not found' });
   } else if (Number(asset.uploaded_by) !== Number(req.session.userId)
       && !['admin', 'owner'].includes(req.family.role)) {
     return res.status(404).json({ error: 'Media not found' });
@@ -80,4 +90,13 @@ async function stream(req, res) {
   return fs.createReadStream(path.join(localDir, `${asset.id}${extension}`)).on('error', () => res.sendStatus(404)).pipe(res);
 }
 
-module.exports = { ready, upload, save, stream, durable: Boolean(storage) };
+async function readAsset(asset) {
+  await ready;
+  if (storage) {
+    const [buffer] = await storage.bucket(bucketName).file(asset.object_name).download();
+    return buffer;
+  }
+  return fs.promises.readFile(path.join(localDir, `${asset.id}${path.extname(asset.object_name)}`));
+}
+
+module.exports = { ready, upload, save, stream, readAsset, durable: Boolean(storage) };

@@ -16,6 +16,8 @@ const mediaStorage = require('./media-storage');
 const privacyAccess = require('./privacy-access');
 const archiveAccess = require('./archive-access');
 const explorationAccess = require('./exploration-access');
+const evidenceAccess = require('./evidence-access');
+const gedcomAccess = require('./gedcom-access');
 const treeEngine = require('./public/tree-layout');
 
 const app = express();
@@ -216,6 +218,8 @@ const requireRole = familyAccess.requireRole;
 
 platformAccess.registerRoutes(app);
 explorationAccess.registerPublicRoutes(app);
+evidenceAccess.registerRoutes(app, { requireAuth, requireApproved, requireFamily, requireRole });
+gedcomAccess.registerRoutes(app, { requireAuth, requireApproved, requireFamily, requireRole });
 
 app.use('/api/account', requireAuth, requireApproved);
 
@@ -1023,7 +1027,7 @@ app.use((err, req, res, next) => {
 });
 
 if (require.main === module) {
-  Promise.all([db.ready, familyAccess.ready, platformAccess.ready, trustAccess.ready, mediaStorage.ready, privacyAccess.ready, archiveAccess.ready, explorationAccess.ready])
+  Promise.all([db.ready, familyAccess.ready, platformAccess.ready, trustAccess.ready, mediaStorage.ready, privacyAccess.ready, archiveAccess.ready, explorationAccess.ready, evidenceAccess.ready, gedcomAccess.ready])
     .then(() => {
       app.listen(PORT, () => {
         console.log('Family tree server running at http://localhost:' + PORT);

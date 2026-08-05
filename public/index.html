@@ -430,6 +430,10 @@
           <span class="workspace-tab-icon">¶</span><span>Stories</span>
           <span class="workspace-count" id="storiesNavCount">0</span>
         </button>
+        <button class="workspace-tab" type="button" data-view="evidence" aria-selected="false">
+          <span class="workspace-tab-icon">◎</span><span>Evidence</span>
+          <span class="workspace-count" id="evidenceNavCount">0</span>
+        </button>
       </div>
       <div class="workspace-nav-note"><span></span>Private family archive</div>
     </nav>
@@ -592,6 +596,15 @@
       </section>
       <section id="storiesFeatured" class="stories-featured hidden"></section>
       <section class="story-grid" id="storyGrid"></section>
+    </main>
+
+    <main class="archive-view evidence-view hidden" id="evidenceView">
+      <section class="archive-hero evidence-hero">
+        <div class="archive-hero-copy"><p class="archive-kicker">SOURCES &amp; EVIDENCE</p><h1>Keep every claim <em>traceable.</em></h1><p>Attach records, research notes, and original scans to the people and relationships they support.</p></div>
+        <div class="archive-hero-actions"><button class="btn archive-primary-action" id="addSourceBtn" type="button">Add a source</button><button class="btn archive-secondary-action" id="gedcomExportBtn" type="button">Export GEDCOM</button><button class="btn archive-secondary-action" id="gedzipExportBtn" type="button">Export GEDZip</button><label class="btn archive-secondary-action" for="gedcomImportFile">Preview import</label><input class="hidden" id="gedcomImportFile" type="file" accept=".ged,.gedcom,.zip" /></div>
+      </section>
+      <section class="archive-toolbar evidence-toolbar"><div class="archive-search"><span>⌕</span><input id="evidenceSearch" type="search" placeholder="Search sources and repositories" /></div><select id="evidenceSubjectType"><option value="person">People</option><option value="relationship">Relationships</option><option value="event">Life events</option><option value="story">Stories</option></select><input id="evidenceSubjectId" type="number" min="1" placeholder="Subject ID" aria-label="Evidence subject ID" /><button class="btn btn-ghost" id="loadEvidenceBtn" type="button">View attached evidence</button><span id="evidenceResultCount" class="stories-result-count">0 sources</span></section>
+      <section class="evidence-layout"><div class="evidence-source-list" id="evidenceSourceList"></div><aside class="evidence-detail" id="evidenceDetail"><div class="empty-card"><span class="empty-glyph">◎</span><h2>Build a source library</h2><p>Select a source or enter a subject ID to review the evidence behind a family fact.</p></div></aside></section>
     </main>
 
     <!-- ============ Side Detail Panel ============ -->
@@ -968,6 +981,7 @@
   <script src="/explorer.js?v=exploration3"></script>
   <script src="/app.js?v=exploration3"></script>
   <script src="/archive.js?v=exploration3"></script>
+  <script src="/evidence.js?v=release45"></script>
 </body>
 
 </html>
