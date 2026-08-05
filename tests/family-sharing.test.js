@@ -24,6 +24,7 @@ const { app } = require('../server');
 const db = require('../db');
 const familyAccess = require('../family-access');
 const platformAccess = require('../platform-access');
+const privacyAccess = require('../privacy-access');
 
 async function signup(agent, body) {
   return agent.post('/api/auth/signup').send({ password, ...body });
@@ -34,7 +35,7 @@ async function approve(superadmin, userId) {
 }
 
 test('payment approval gates shared-family access and roles', async (t) => {
-  await Promise.all([db.ready, familyAccess.ready, platformAccess.ready]);
+  await Promise.all([db.ready, familyAccess.ready, platformAccess.ready, privacyAccess.ready]);
   t.after(async () => {
     await db.pool.end();
     fs.rmSync(mediaTestDir, { recursive: true, force: true });
@@ -193,6 +194,70 @@ test('payment approval gates shared-family access and roles', async (t) => {
   const contributorRename = await contributor.put('/api/tree').send({ name: 'Blocked rename' });
   assert.equal(contributorRename.status, 403, contributorRename.text);
 
+  const livingPrivateDetails = await owner.post('/api/persons').send({
+    first_name: 'Nia',
+    last_name: 'Protected',
+    birth_date: '1994-06-18',
+    birth_place: 'Nairobi',
+    maiden_name: 'Sensitive',
+    notes: 'Private family note',
+    life_status: 'living',
+    visibility: 'family'
+  });
+  assert.equal(livingPrivateDetails.status, 201, livingPrivateDetails.text);
+  const ownerOnly = await owner.post('/api/persons').send({
+    first_name: 'Hidden',
+    last_name: 'Relative',
+    notes: 'Creator only',
+    life_status: 'living',
+    visibility: 'private'
+  });
+  assert.equal(ownerOnly.status, 201, ownerOnly.text);
+
+  const privacyTree = await viewer.get('/api/tree');
+  const limited = privacyTree.body.persons.find((person) => person.id === livingPrivateDetails.body.id);
+  assert.equal(limited.privacy_redacted, 'living_limited');
+  assert.equal(limited.birth_date, '1994');
+  assert.equal(limited.birth_place, null);
+  assert.equal(limited.maiden_name, '');
+  assert.equal(limited.notes, null);
+  assert.equal(limited.can_edit, false);
+  const placeholder = privacyTree.body.persons.find((person) => person.id === ownerOnly.body.id);
+  assert.equal(placeholder.first_name, 'Private');
+  assert.equal(placeholder.privacy_redacted, 'private');
+  assert.equal(placeholder.notes, undefined);
+
+  const privateEdit = await contributor.put(`/api/persons/${ownerOnly.body.id}`).send({ notes: 'Leaked edit' });
+  assert.equal(privateEdit.status, 403, privateEdit.text);
+
+  const sensitiveMedia = await owner.post('/api/upload')
+    .attach('photo', Buffer.from('sensitive-image-data'), { filename: 'private.png', contentType: 'image/png' });
+  assert.equal(sensitiveMedia.status, 200, sensitiveMedia.text);
+  const attachSensitiveMedia = await owner.put(`/api/persons/${livingPrivateDetails.body.id}`).send({
+    photo_url: sensitiveMedia.body.url
+  });
+  assert.equal(attachSensitiveMedia.status, 200, attachSensitiveMedia.text);
+  assert.equal((await owner.get(sensitiveMedia.body.url)).status, 200);
+  assert.equal((await viewer.get(sensitiveMedia.body.url)).status, 404);
+
+  const softDelete = await owner.delete(`/api/persons/${livingPrivateDetails.body.id}`).send({ reason: 'Test recovery' });
+  assert.equal(softDelete.status, 200, softDelete.text);
+  const afterDelete = await owner.get('/api/tree');
+  assert.equal(afterDelete.body.persons.some((person) => person.id === livingPrivateDetails.body.id), false);
+  assert.equal((await viewer.get('/api/recycle-bin/persons')).status, 403);
+  const recycle = await owner.get('/api/recycle-bin/persons');
+  assert.equal(recycle.status, 200, recycle.text);
+  assert.equal(recycle.body.persons.find((person) => person.id === livingPrivateDetails.body.id).deletion_reason, 'Test recovery');
+  const restore = await owner.post(`/api/recycle-bin/persons/${livingPrivateDetails.body.id}/restore`);
+  assert.equal(restore.status, 200, restore.text);
+  const afterRestore = await owner.get('/api/tree');
+  assert.equal(afterRestore.body.persons.some((person) => person.id === livingPrivateDetails.body.id), true);
+
+  const accountExport = await viewer.get('/api/account/data-export');
+  assert.equal(accountExport.status, 200, accountExport.text);
+  assert.equal(accountExport.body.account.email, viewerEmail);
+  assert.equal(accountExport.body.contributed_people.some((person) => person.id === ownerOnly.body.id), false);
+
   const members = await owner.get('/api/family/members');
   assert.equal(members.status, 200, members.text);
   assert.deepEqual(new Set(members.body.members.map((member) => member.role)), new Set(['owner', 'viewer', 'contributor']));
@@ -203,7 +268,7 @@ test('payment approval gates shared-family access and roles', async (t) => {
   assert.equal(emptySecondTree.body.persons.length, 0);
   await owner.post(`/api/families/${originalFamilyId}/select`);
   const originalTree = await owner.get('/api/tree');
-  assert.equal(originalTree.body.persons.length, 2);
+  assert.equal(originalTree.body.persons.length, 4);
 
   const audit = await owner.get('/api/family/audit');
   assert.equal(audit.status, 200, audit.text);
@@ -231,6 +296,25 @@ test('payment approval gates shared-family access and roles', async (t) => {
   assert.equal(reusedReset.status, 400, reusedReset.text);
   const oldPasswordLogin = await request(app).post('/api/auth/login').send({ email: viewerEmail, password });
   assert.equal(oldPasswordLogin.status, 401, oldPasswordLogin.text);
-  const newPasswordLogin = await request(app).post('/api/auth/login').send({ email: viewerEmail, password: newPassword });
+  const viewerAfterReset = request.agent(app);
+  const newPasswordLogin = await viewerAfterReset.post('/api/auth/login').send({ email: viewerEmail, password: newPassword });
   assert.equal(newPasswordLogin.status, 200, newPasswordLogin.text);
+
+  const deleteContributor = await contributor.delete('/api/account').send({
+    password,
+    confirmation: 'DELETE MY ACCOUNT'
+  });
+  assert.equal(deleteContributor.status, 200, deleteContributor.text);
+  const deletedLogin = await request(app).post('/api/auth/login').send({ email: contributorEmail, password });
+  assert.equal(deletedLogin.status, 401, deletedLogin.text);
+  await owner.post(`/api/families/${originalFamilyId}/select`);
+  const preservedSharedRecords = await owner.get('/api/tree');
+  assert.ok(preservedSharedRecords.body.persons.some((person) => person.id === contributorWrite.body.id));
+
+  const transferOwnership = await owner.patch('/api/family/owner').send({ user_id: viewerSignup.body.id });
+  assert.equal(transferOwnership.status, 200, transferOwnership.text);
+  const previousOwnerContext = await owner.get('/api/auth/me');
+  assert.equal(previousOwnerContext.body.active_family_role, 'admin');
+  const newOwnerContext = await viewerAfterReset.get('/api/auth/me');
+  assert.equal(newOwnerContext.body.active_family_role, 'owner');
 });

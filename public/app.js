@@ -630,6 +630,11 @@ function openSidePanel(id) {
   const relatives = [...relativeIds].map(personById).filter(Boolean);
 
   const avatarStyle = p.photo_url ? `background-image:url(${p.photo_url})` : '';
+  const privacyNotice = p.privacy_redacted === 'private'
+    ? 'This relative chose to keep their profile details private.'
+    : p.privacy_redacted === 'living_limited'
+      ? 'Some details are hidden because this person is living.'
+      : '';
 
   $('#sidePanelContent').innerHTML = `
     <div class="panel-avatar" style="${avatarStyle || (p.gender === 'male' ? 'background-color:var(--male)' : p.gender === 'female' ? 'background-color:var(--female)' : '')}">${p.photo_url ? '' : initials(p)}</div>
@@ -637,9 +642,11 @@ function openSidePanel(id) {
     <div class="panel-meta">${p.birth_date ? 'Born ' + escapeHtml(p.birth_date) : 'Birth date unknown'}${p.death_date ? ' · Died ' + escapeHtml(p.death_date) : ''}</div>
     ${p.birth_place ? `<div class="panel-place">📍 ${escapeHtml(p.birth_place)}</div>` : ''}
     ${p.notes ? `<div class="panel-notes">${escapeHtml(p.notes)}</div>` : ''}
+    ${privacyNotice ? `<div class="privacy-notice">${escapeHtml(privacyNotice)}</div>` : ''}
+    ${!p.privacy_redacted ? `<div class="privacy-profile-meta">${escapeHtml(p.life_status || 'unknown')} · ${escapeHtml(p.visibility || 'family')}</div>` : ''}
 
     <div class="panel-actions">
-      <button class="btn btn-ghost" id="editPersonBtn">Edit</button>
+      ${p.can_edit ? '<button class="btn btn-ghost" id="editPersonBtn">Edit</button>' : ''}
       <button class="btn btn-ghost" id="focusPersonBtn">Center in view</button>
     </div>
 
@@ -652,7 +659,7 @@ function openSidePanel(id) {
     ${relSection('Relatives', relatives, id, 'relative_of_target')}
   `;
 
-  $('#editPersonBtn').addEventListener('click', () => openPersonModal(p));
+  $('#editPersonBtn')?.addEventListener('click', () => openPersonModal(p));
   $('#focusPersonBtn').addEventListener('click', () => centerOnPerson(id));
 
   panel.querySelectorAll('.rel-name').forEach((el) => {
@@ -663,6 +670,7 @@ function openSidePanel(id) {
     });
   });
   panel.querySelectorAll('.rel-remove').forEach((el) => {
+    if (!p.can_edit) { el.remove(); return; }
     el.addEventListener('click', async () => {
       await api(`/relationships/${el.dataset.relId}`, { method: 'DELETE' });
       await loadTree();
@@ -670,6 +678,7 @@ function openSidePanel(id) {
     });
   });
   panel.querySelectorAll('.quick-add-btn').forEach((el) => {
+    if (!p.can_edit) { el.remove(); return; }
     el.addEventListener('click', () => {
       const kind = el.dataset.kind;
       // Allow adding these directly now since they draw as dashed lines
@@ -837,6 +846,8 @@ function openPersonModal(person, prefill = {}) {
   $('#f_last_name').value = person?.last_name || '';
   $('#f_maiden_name').value = person?.maiden_name || '';
   $('#f_gender').value = person?.gender || 'unknown';
+  $('#f_life_status').value = person?.life_status || 'living';
+  $('#f_visibility').value = person?.visibility || 'family';
   $('#f_birth_date').value = person?.birth_date || '';
   $('#f_death_date').value = person?.death_date || '';
   $('#f_birth_place').value = person?.birth_place || '';
@@ -853,7 +864,7 @@ function openPersonModal(person, prefill = {}) {
   }
   preview.dataset.url = person?.photo_url || '';
 
-  $('#deletePersonBtn').classList.toggle('hidden', !person);
+  $('#deletePersonBtn').classList.toggle('hidden', !person || !person.can_edit);
 
   // Search section handling
   const isAddingNew = !person;
@@ -1004,6 +1015,8 @@ $('#personForm').addEventListener('submit', async (e) => {
         last_name: $('#f_last_name').value.trim(),
         maiden_name: $('#f_maiden_name').value.trim(),
         gender: $('#f_gender').value,
+        life_status: $('#f_life_status').value,
+        visibility: $('#f_visibility').value,
         birth_date: $('#f_birth_date').value || null,
         death_date: $('#f_death_date').value || null,
         birth_place: $('#f_birth_place').value.trim() || null,
@@ -1020,6 +1033,8 @@ $('#personForm').addEventListener('submit', async (e) => {
         last_name: $('#f_last_name').value.trim(),
         maiden_name: $('#f_maiden_name').value.trim(),
         gender: $('#f_gender').value,
+        life_status: $('#f_life_status').value,
+        visibility: $('#f_visibility').value,
         birth_date: $('#f_birth_date').value || null,
         death_date: $('#f_death_date').value || null,
         birth_place: $('#f_birth_place').value.trim() || null,
@@ -1064,8 +1079,9 @@ $('#personForm').addEventListener('submit', async (e) => {
 
 $('#deletePersonBtn').addEventListener('click', async () => {
   if (!modalContext.editingId) return;
-  if (!confirm('Delete this person and all their recorded relationships?')) return;
-  await api(`/persons/${modalContext.editingId}`, { method: 'DELETE' });
+  if (!confirm('Move this person to the recycle bin? Their relationships will return if the profile is restored.')) return;
+  const reason = prompt('Optional reason for deletion:') || '';
+  await api(`/persons/${modalContext.editingId}`, { method: 'DELETE', body: JSON.stringify({ reason }) });
   closePersonModal();
   $('#sidePanel').classList.add('hidden');
   state.selectedId = null;
@@ -1278,6 +1294,9 @@ async function loadFamilyManagement() {
     const isOwner = member.role === 'owner';
     const canManageAdmin = currentUser.active_family_role === 'owner';
     const editable = canManage && !isOwner && (member.role !== 'admin' || canManageAdmin);
+    const transferControl = currentUser.active_family_role === 'owner' && !isOwner
+      ? `<button class="btn btn-ghost transfer-owner-btn" data-user-id="${member.id}" data-email="${escapeHtml(member.email)}" type="button">Make owner</button>`
+      : '';
     const roleControl = editable ? `
       <select class="member-role-select" data-user-id="${member.id}">
         <option value="viewer" ${member.role === 'viewer' ? 'selected' : ''}>Viewer</option>
@@ -1293,6 +1312,7 @@ async function loadFamilyManagement() {
           <div class="member-meta">Joined ${new Date(member.joined_at).toLocaleDateString()}</div>
         </div>
         ${roleControl}
+        ${transferControl}
       </div>
     `;
   }).join('');
@@ -1321,6 +1341,23 @@ async function loadFamilyManagement() {
         await api(`/family/members/${button.dataset.userId}`, { method: 'DELETE' });
         showFamilyMessage('Member removed.', 'success');
         await loadFamilyManagement();
+      } catch (error) {
+        showFamilyMessage(error.message);
+      }
+    });
+  });
+
+  $$('.transfer-owner-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (!confirm(`Transfer ownership to ${button.dataset.email}? You will become an administrator.`)) return;
+      try {
+        await api('/family/owner', {
+          method: 'PATCH',
+          body: JSON.stringify({ user_id: Number(button.dataset.userId) })
+        });
+        await refreshUserContext();
+        await loadFamilyManagement();
+        showFamilyMessage('Family ownership transferred.', 'success');
       } catch (error) {
         showFamilyMessage(error.message);
       }
@@ -1624,6 +1661,71 @@ $('#authForm').addEventListener('submit', async (event) => {
 $('#logoutBtn').addEventListener('click', async () => {
   await api('/auth/logout', { method: 'POST' }).catch(() => {});
   window.location.reload();
+});
+
+function showPrivacyMessage(message, type = 'error') {
+  const element = $('#privacyMessage');
+  element.textContent = message;
+  element.className = `family-message ${type}`;
+}
+
+async function loadRecycleBin() {
+  const section = $('#recycleSection');
+  section.classList.toggle('hidden', !hasFamilyRole('admin'));
+  if (!hasFamilyRole('admin')) return;
+  const data = await api('/recycle-bin/persons');
+  const container = $('#recycleList');
+  if (!data.persons.length) {
+    container.innerHTML = '<p class="muted-text">The recycle bin is empty.</p>';
+    return;
+  }
+  container.innerHTML = data.persons.map((person) => `
+    <div class="recycle-row">
+      <div><strong>${escapeHtml(fullName(person))}</strong>
+        <div class="muted-text">Deleted ${new Date(person.deleted_at).toLocaleString()}${person.deletion_reason ? ' · ' + escapeHtml(person.deletion_reason) : ''}<br>Recovery date: ${new Date(person.expires_at).toLocaleDateString()}</div>
+      </div>
+      <div class="recycle-actions">
+        <button class="btn btn-ghost restore-person-btn" data-id="${person.id}" type="button">Restore</button>
+        ${hasFamilyRole('owner') ? `<button class="btn btn-text purge-person-btn" data-id="${person.id}" type="button">Delete forever</button>` : ''}
+      </div>
+    </div>
+  `).join('');
+  $$('.restore-person-btn').forEach((button) => button.addEventListener('click', async () => {
+    await api(`/recycle-bin/persons/${button.dataset.id}/restore`, { method: 'POST' });
+    await Promise.all([loadRecycleBin(), loadTree()]);
+    showPrivacyMessage('Person restored.', 'success');
+  }));
+  $$('.purge-person-btn').forEach((button) => button.addEventListener('click', async () => {
+    if (!confirm('Permanently delete this profile? This cannot be undone.')) return;
+    await api(`/recycle-bin/persons/${button.dataset.id}`, { method: 'DELETE' });
+    await loadRecycleBin();
+    showPrivacyMessage('Profile permanently deleted.', 'success');
+  }));
+}
+
+$('#privacyBtn').addEventListener('click', async () => {
+  $('#privacyModalOverlay').classList.remove('hidden');
+  $('#privacyMessage').className = 'hidden family-message';
+  try { await loadRecycleBin(); } catch (error) { showPrivacyMessage(error.message); }
+});
+$('#privacyModalClose').addEventListener('click', () => $('#privacyModalOverlay').classList.add('hidden'));
+$('#refreshRecycleBtn').addEventListener('click', () => loadRecycleBin().catch((error) => showPrivacyMessage(error.message)));
+$('#accountExportBtn').addEventListener('click', () => { window.location.href = `${API}/account/data-export`; });
+$('#deleteAccountForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!confirm('Permanently delete your Lineage account?')) return;
+  try {
+    await api('/account', {
+      method: 'DELETE',
+      body: JSON.stringify({
+        password: $('#deleteAccountPassword').value,
+        confirmation: $('#deleteAccountConfirmation').value
+      })
+    });
+    window.location.reload();
+  } catch (error) {
+    showPrivacyMessage(error.message);
+  }
 });
 
 async function initializeApp() {

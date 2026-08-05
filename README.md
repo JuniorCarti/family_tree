@@ -19,9 +19,11 @@ Lineage is a full-stack family tree application for building shared, multi-gener
 - Parent, spouse, sibling, grandparent, grandchild, cousin, and custom relationships
 - Interactive SVG layout with search, pan, and zoom
 - Person editing, private Cloud Storage media, audit history, duplicate detection, merging, and Excel export
+- Living-person protection, per-profile visibility, safe private placeholders, and privacy-aware exports
+- Recycle-bin restore plus personal account-data export and confirmed account deletion
 - Automatic migration of existing account-owned trees into shared families
 
-See [Family Access and Sharing](docs/FAMILY_ACCESS.md) for family roles and invitations. See [Account Unlock and Superadmin Approval](docs/ACCOUNT_APPROVAL.md) for the KES 500 M-Pesa workflow. See [Release 1: Trust Foundation](docs/RELEASE_1_TRUST.md) for email, recovery, storage, audit, and rollout configuration.
+See [Family Access and Sharing](docs/FAMILY_ACCESS.md) for family roles and invitations. See [Account Unlock and Superadmin Approval](docs/ACCOUNT_APPROVAL.md) for the KES 500 M-Pesa workflow. See [Release 1: Trust Foundation](docs/RELEASE_1_TRUST.md) and [Release 2: Privacy and Data Control](docs/RELEASE_2_PRIVACY.md) for release behavior and rollout details.
 
 ## Technology
 
@@ -95,16 +97,17 @@ Firebase preserves the `__session` cookie for rewritten `/api/**` requests. Expr
 | Prefix | Purpose |
 | --- | --- |
 | `/api/auth` | Signup, verification, login, logout, recovery, and current account context |
-| `/api/account` | Lock status and M-Pesa payment-reference submission |
+| `/api/account` | Lock status, payment submission, data export, and account deletion |
 | `/api/superadmin` | Manual payment review and platform account approval |
 | `/api/families` | List, create, and select family trees |
-| `/api/family` | Members, invitations, role administration, and audit history |
+| `/api/family` | Members, invitations, role and ownership administration, and audit history |
 | `/api/media` | Authenticated active-family media delivery |
 | `/api/persons` | People in the active family |
 | `/api/relationships` | Relationships in the active family |
 | `/api/tree` | Shared tree payload and administrator rename |
 | `/api/duplicates`, `/api/merge` | Duplicate review and contributor merge |
 | `/api/export` | Active-family Excel export |
+| `/api/recycle-bin` | Administrator restore and owner permanent deletion |
 
 Detailed family endpoints and permissions are in [docs/FAMILY_ACCESS.md](docs/FAMILY_ACCESS.md).
 
@@ -126,11 +129,12 @@ npm test
 - [Family access design and operations](docs/FAMILY_ACCESS.md)
 - [Account unlock and superadmin approval](docs/ACCOUNT_APPROVAL.md)
 - [Trust foundation release and rollout](docs/RELEASE_1_TRUST.md)
+- [Privacy and data control release](docs/RELEASE_2_PRIVACY.md)
 
 Use a feature branch and pull request rather than committing directly to `main`.
 
 ## Current limitations
 
-- MFA, passkeys, automated backups, soft deletion, and undo/restore are not implemented yet.
-- SMTP and MEDIA_BUCKET must be configured before deploying the new production trust flows.
+- MFA, passkeys, automated backups, and automated recycle-bin expiry are not implemented yet.
+- SMTP and the private media bucket must remain configured in each deployed environment.
 - The Express API remains mostly monolithic; route/service separation would improve maintainability as it grows.

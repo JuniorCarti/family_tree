@@ -238,6 +238,7 @@
         <button class="btn btn-primary" id="addPersonBtn">+ Add person</button>
         <button class="btn btn-ghost" id="mergeBtn">Find Duplicates</button>
         <button class="btn btn-ghost" id="exportBtn">Download Excel</button>
+        <button class="btn btn-ghost" id="privacyBtn">Privacy &amp; account</button>
         <button class="btn btn-ghost hidden" id="superadminBtn">Platform approvals</button>
         <button class="btn btn-ghost" id="logoutBtn">Log out</button>
       </div>
@@ -424,6 +425,24 @@
               </select>
             </div>
             <div class="field-row">
+              <label>Life status</label>
+              <select id="f_life_status">
+                <option value="living">Living</option>
+                <option value="deceased">Deceased</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </div>
+            <div class="field-row">
+              <label>Who can see full details?</label>
+              <select id="f_visibility">
+                <option value="family">Everyone in this family</option>
+                <option value="contributors">Contributors and admins</option>
+                <option value="admins">Admins and owner</option>
+                <option value="private">Only me</option>
+              </select>
+            </div>
+            <p class="privacy-field-hint span-2">Living people receive extra protection: viewers see only a birth year and no photo, birthplace, maiden name, or notes.</p>
+            <div class="field-row">
               <label>Born</label>
               <input type="date" id="f_birth_date" />
             </div>
@@ -474,6 +493,38 @@
           </div>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ============ Privacy and Account Modal ============ -->
+  <div class="modal-overlay hidden" id="privacyModalOverlay">
+    <div class="modal privacy-modal">
+      <div class="modal-header">
+        <div><h3>Privacy &amp; account</h3><p class="modal-subtitle">Control recovery and your personal account data.</p></div>
+        <button class="modal-close" id="privacyModalClose" type="button">&times;</button>
+      </div>
+      <section class="family-section" id="recycleSection">
+        <div class="privacy-section-heading">
+          <div><h4>Recently deleted people</h4><p class="muted-text">Admins can restore profiles; owners can permanently remove them.</p></div>
+          <button class="btn btn-ghost" id="refreshRecycleBtn" type="button">Refresh</button>
+        </div>
+        <div id="recycleList" class="recycle-list"></div>
+      </section>
+      <section class="family-section">
+        <h4>Your account data</h4>
+        <p class="muted-text">Download your account, memberships, and records you contributed as JSON.</p>
+        <button class="btn btn-ghost" id="accountExportBtn" type="button">Download my data</button>
+      </section>
+      <section class="family-section danger-zone">
+        <h4>Delete account</h4>
+        <p class="muted-text">This is permanent. Shared family owners must transfer ownership first.</p>
+        <form id="deleteAccountForm" class="delete-account-form">
+          <input id="deleteAccountPassword" type="password" autocomplete="current-password" placeholder="Current password" required />
+          <input id="deleteAccountConfirmation" type="text" placeholder="Type DELETE MY ACCOUNT" required />
+          <button class="btn btn-danger" type="submit">Permanently delete my account</button>
+        </form>
+      </section>
+      <div id="privacyMessage" class="hidden family-message"></div>
     </div>
   </div>
 
