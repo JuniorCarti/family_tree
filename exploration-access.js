@@ -74,9 +74,9 @@ async function loadTreeData(familyId, userId, role, options = {}) {
     .filter((person) => person.privacy_redacted !== 'private');
   if (options.includeLiving === false) persons = persons.filter((person) => person.life_status !== 'living');
   const visibleIds = new Set(persons.map((person) => Number(person.id)));
-  const relationships = relationshipResult.rows.filter((relationship) => (
+  const relationships = treeEngine.withDerivedRelationships(persons, relationshipResult.rows.filter((relationship) => (
     visibleIds.has(Number(relationship.person1_id)) && visibleIds.has(Number(relationship.person2_id))
-  ));
+  )));
   return {
     tree: familyResult.rows[0],
     persons,
@@ -123,6 +123,8 @@ function serializeSharedRelationship(relationship) {
   return {
     id: relationship.id,
     type: relationship.type,
+    inferred: Boolean(relationship.inferred),
+    relationship_label: relationship.label || null,
     person1_id: relationship.person1_id,
     person2_id: relationship.person2_id,
     label: relationship.label,

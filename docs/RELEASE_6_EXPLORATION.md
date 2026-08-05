@@ -23,6 +23,12 @@ Clicking a person in a chart, list, or relationship path opens the same existing
 
 The existing **Timeline** workspace remains the chronological exploration view for births, education, marriage, work, residence, migration, milestones, and deaths. The Places tab uses those same privacy-filtered events geographically.
 
+## Derived kinship
+
+The tree now derives kinship from recorded parent links across every surface. Shared parents produce inferred siblings; parent chains produce grandparents and grandchildren; a parent's siblings produce aunts/uncles and nieces/nephews; and children of those sibling branches produce cousins. These edges are included in tree lines, profile categories, relationship paths, exploration projections, and privacy-filtered exports.
+
+Derived edges carry an **inferred** marker, have no database ID, and are never silently inserted into the relationships table. An explicitly recorded relationship suppresses the matching inferred edge, so the family record stays free of duplicates. Removing or changing a parent link automatically changes the derived kinship shown by the application.
+
 ## Navigation and presentation
 
 - The Family view retains drag, wheel, pinch, zoom, and fit controls.

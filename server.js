@@ -16,6 +16,7 @@ const mediaStorage = require('./media-storage');
 const privacyAccess = require('./privacy-access');
 const archiveAccess = require('./archive-access');
 const explorationAccess = require('./exploration-access');
+const treeEngine = require('./public/tree-layout');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -728,10 +729,12 @@ app.get('/api/tree', async (req, res) => {
       JOIN persons p1 ON p1.id = r.person1_id AND p1.deleted_at IS NULL
       JOIN persons p2 ON p2.id = r.person2_id AND p2.deleted_at IS NULL
       WHERE r.family_id = $1`, [req.family.id]);
+    const persons = privacyAccess.serializePeople(pResult.rows, req.session.userId, req.family.role);
+    const relationships = treeEngine.withDerivedRelationships(persons, rResult.rows);
     res.json({
       tree: { id: req.family.id, name: req.family.name, role: req.family.role },
-      persons: privacyAccess.serializePeople(pResult.rows, req.session.userId, req.family.role),
-      relationships: rResult.rows
+      persons,
+      relationships
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

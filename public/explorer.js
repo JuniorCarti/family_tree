@@ -302,7 +302,14 @@
     if (edge.type === 'parent') {
       return Number(edge.person1_id) === Number(fromId) ? 'parent of' : 'child of';
     }
-    return String(edge.relationship_type || 'related').replace(/_/g, ' ');
+    if (edge.type === 'grandparent') {
+      return Number(edge.person1_id) === Number(fromId) ? 'grandparent of' : 'grandchild of';
+    }
+    if (edge.type === 'aunt_uncle') {
+      return Number(edge.person1_id) === Number(fromId) ? 'aunt/uncle of' : 'niece/nephew of';
+    }
+    if (edge.type === 'cousin') return 'cousin of';
+    return String(edge.label || edge.relationship_type || edge.type || 'related').replace(/_/g, ' ');
   }
 
   function renderPath() {
@@ -317,7 +324,7 @@
     const select = candidates.slice().sort((a, b) => personName(a).localeCompare(personName(b)))
       .map((person) => `<option value="${person.id}" ${Number(person.id) === Number(state.pathTargetId) ? 'selected' : ''}>${escapeHtml(personName(person))}</option>`).join('');
     let pathHtml = '<div class="explorer-empty-panel"><strong>No relationship path found.</strong><p>These two people are not connected by the recorded relationships.</p></div>';
-    if (path?.personIds?.length) {
+    if (path?.people?.length) {
       pathHtml = path.people.map((person, index) => {
         const step = path.steps[index];
         return `<div class="relationship-path-step">

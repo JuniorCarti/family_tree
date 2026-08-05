@@ -248,6 +248,86 @@
     return { personById, parents, children, spouses, neighbors };
   }
 
+  function deriveRelationshipFacts(persons, relationships) {
+    const graph = buildRelationshipGraph(persons, relationships);
+    const personById = graph.personById;
+    const explicitKeys = new Set();
+    const inferredKeys = new Set();
+    const inferred = [];
+
+    function symmetricKey(type, first, second) {
+      const pair = [Number(first), Number(second)].sort((a, b) => a - b);
+      const family = type === 'grandchild' ? 'grandparent'
+        : type === 'niece_nephew' ? 'aunt_uncle' : type;
+      return `${family}:${pair[0]}:${pair[1]}`;
+    }
+
+    function relationshipKey(relationship) {
+      if (['spouse', 'sibling', 'grandparent', 'grandchild', 'aunt_uncle', 'niece_nephew', 'cousin', 'relative'].includes(relationship.type)) {
+        return symmetricKey(relationship.type, relationship.person1_id, relationship.person2_id);
+      }
+      return `parent:${Number(relationship.person1_id)}:${Number(relationship.person2_id)}`;
+    }
+
+    for (const relationship of relationships) {
+      explicitKeys.add(relationshipKey(relationship));
+    }
+
+    function add(first, second, type, label) {
+      const firstId = Number(first);
+      const secondId = Number(second);
+      if (firstId === secondId || !personById.has(firstId) || !personById.has(secondId)) return;
+      const key = symmetricKey(type, firstId, secondId);
+      if (explicitKeys.has(key) || inferredKeys.has(key)) return;
+      inferredKeys.add(key);
+      inferred.push({
+        id: null,
+        inferred: true,
+        inferred_key: key,
+        type,
+        person1_id: personById.get(firstId).id,
+        person2_id: personById.get(secondId).id,
+        label,
+      });
+    }
+
+    for (const [personId, parents] of graph.parents.entries()) {
+      for (const parentId of parents) {
+        for (const siblingId of graph.children.get(parentId) || []) {
+          if (siblingId !== personId) add(personId, siblingId, 'sibling', 'Sibling of');
+        }
+      }
+    }
+
+    for (const [personId, parents] of graph.parents.entries()) {
+      for (const parentId of parents) {
+        for (const grandparentId of graph.parents.get(parentId) || []) {
+          add(grandparentId, personId, 'grandparent', 'Grandparent of');
+        }
+      }
+    }
+
+    for (const [personId, parents] of graph.parents.entries()) {
+      for (const parentId of parents) {
+        for (const grandparentId of graph.parents.get(parentId) || []) {
+          for (const siblingId of graph.children.get(grandparentId) || []) {
+            if (siblingId === parentId) continue;
+            add(siblingId, personId, 'aunt_uncle', 'Aunt/Uncle of');
+            for (const cousinId of graph.children.get(siblingId) || []) {
+              if (cousinId !== personId) add(personId, cousinId, 'cousin', 'Cousin of');
+            }
+          }
+        }
+      }
+    }
+
+    return inferred;
+  }
+
+  function withDerivedRelationships(persons, relationships) {
+    return [...relationships, ...deriveRelationshipFacts(persons, relationships)];
+  }
+
   function collectDirectionalIds(graph, focusId, direction = 'family', depth = 4, collapsedIds = []) {
     const startId = Number(focusId);
     if (!graph.personById.has(startId)) return new Set();
@@ -283,7 +363,8 @@
   }
 
   function projectTree(persons, relationships, options = {}) {
-    const graph = options.graph || buildRelationshipGraph(persons, relationships);
+    const enrichedRelationships = withDerivedRelationships(persons, relationships);
+    const graph = options.graph || buildRelationshipGraph(persons, enrichedRelationships);
     let ids;
     if (options.focusId) {
       ids = collectDirectionalIds(
@@ -303,14 +384,14 @@
       }
     }
     const projectedPeople = persons.filter((person) => ids.has(Number(person.id)));
-    const projectedRelationships = relationships.filter((relationship) => (
+    const projectedRelationships = enrichedRelationships.filter((relationship) => (
       ids.has(Number(relationship.person1_id)) && ids.has(Number(relationship.person2_id))
     ));
     return { persons: projectedPeople, relationships: projectedRelationships, ids, graph };
   }
 
   function shortestRelationshipPath(persons, relationships, fromId, toId, maxHops = 30) {
-    const graph = buildRelationshipGraph(persons, relationships);
+    const graph = buildRelationshipGraph(persons, withDerivedRelationships(persons, relationships));
     const startId = Number(fromId);
     const targetId = Number(toId);
     if (!graph.personById.has(startId) || !graph.personById.has(targetId)) return null;
@@ -379,6 +460,8 @@
   return {
     computeTreeLayout,
     buildRelationshipGraph,
+    deriveRelationshipFacts,
+    withDerivedRelationships,
     collectDirectionalIds,
     projectTree,
     shortestRelationshipPath,

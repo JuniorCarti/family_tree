@@ -343,7 +343,7 @@ function render() {
       const a = layout.personPos.get(r.person1_id);
       const b = layout.personPos.get(r.person2_id);
       if (a && b) {
-        drawArc(connLayer, a.x + a.w / 2, a.y + a.h / 2, b.x + b.w / 2, b.y + b.h / 2, r.type);
+        drawArc(connLayer, a.x + a.w / 2, a.y + a.h / 2, b.x + b.w / 2, b.y + b.h / 2, r.type, r.inferred);
       }
     }
   }
@@ -403,7 +403,7 @@ const REL_STYLE = {
   relative: { stroke: '#94a3b8', width: 1.8, dash: '4,6' },
 };
 
-function drawArc(layer, x1, y1, x2, y2, kind) {
+function drawArc(layer, x1, y1, x2, y2, kind, inferred = false) {
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
 
   // Decide how far up/down the arc should bow based on horizontal distance
@@ -423,6 +423,12 @@ function drawArc(layer, x1, y1, x2, y2, kind) {
   path.setAttribute('stroke', s.stroke);
   path.setAttribute('stroke-width', s.width);
   if (s.dash) path.setAttribute('stroke-dasharray', s.dash);
+  if (inferred) {
+    path.classList.add('inferred-relationship');
+    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    title.textContent = `${kind.replace(/_/g, ' ')} · inferred from recorded family links`;
+    path.appendChild(title);
+  }
   layer.appendChild(path);
 }
 
@@ -572,7 +578,10 @@ function openSidePanel(id) {
     ${relSection('Siblings', siblings, id, 'sibling_of_target')}
     ${relSection('Grandparents', grandparents, id, 'grandparent_of_target')}
     ${relSection('Grandchildren', grandchildren, id, 'grandchild_of_target')}
-    ${relSection('Relatives', relatives, id, 'relative_of_target')}
+    ${relSection('Aunts / Uncles', (auntUnclesOf.get(id) || []).map(personById).filter(Boolean), id, 'relative_of_target')}
+    ${relSection('Nieces / Nephews', (nieceNephewsOf.get(id) || []).map(personById).filter(Boolean), id, 'relative_of_target')}
+    ${relSection('Cousins', (cousinsOf.get(id) || []).map(personById).filter(Boolean), id, 'relative_of_target')}
+    ${relSection('Other Relatives', relatives, id, 'relative_of_target')}
   `;
 
   $('#editPersonBtn')?.addEventListener('click', () => openPersonModal(p));

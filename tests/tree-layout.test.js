@@ -7,6 +7,8 @@ const { performance } = require('node:perf_hooks');
 const {
   computeTreeLayout,
   buildRelationshipGraph,
+  deriveRelationshipFacts,
+  withDerivedRelationships,
   projectTree,
   shortestRelationshipPath,
   ancestorSlots,
@@ -145,6 +147,32 @@ test('builds deterministic binary ancestor slots including unknown ancestors', (
   assert.deepEqual(slots.levels[0], [1]);
   assert.deepEqual(slots.levels[1], [3, 2]);
   assert.deepEqual(slots.levels[2], [4, null, null, null]);
+});
+
+test('derives the complete kinship chain without creating database records', () => {
+  const persons = [
+    person(1), person(2), person(3), person(4), person(5),
+  ];
+  const relationships = [
+    { type: 'parent', person1_id: 1, person2_id: 2 },
+    { type: 'parent', person1_id: 1, person2_id: 3 },
+    { type: 'parent', person1_id: 2, person2_id: 4 },
+    { type: 'parent', person1_id: 3, person2_id: 5 },
+  ];
+  const derived = deriveRelationshipFacts(persons, relationships);
+  const byPair = new Set(derived.map((item) => `${item.type}:${[item.person1_id, item.person2_id].sort((a, b) => a - b).join('-')}`));
+
+  assert.ok(byPair.has('sibling:2-3'));
+  assert.ok(byPair.has('grandparent:1-4'));
+  assert.ok(byPair.has('grandparent:1-5'));
+  assert.ok(byPair.has('aunt_uncle:3-4'));
+  assert.ok(byPair.has('aunt_uncle:2-5'));
+  assert.ok(byPair.has('cousin:4-5'));
+  assert.ok(derived.every((item) => item.inferred === true && item.id === null));
+  assert.equal(withDerivedRelationships(persons, relationships).length, relationships.length + derived.length);
+
+  const cousinPath = shortestRelationshipPath(persons, relationships, 4, 5);
+  assert.equal(cousinPath.steps[0].relationship.type, 'cousin');
 });
 
 test('exploration shell exposes every view, large-tree LOD, minimap, and accessible mobile controls', () => {
