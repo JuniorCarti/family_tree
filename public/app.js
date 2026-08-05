@@ -9,11 +9,16 @@ const SPOUSE_GAP = 14;     // gap between spouse cards within a unit
 const SIBLING_GAP = 36;    // gap between adjacent sibling units
 const ROW_HEIGHT = 150;    // vertical distance between generations
 const PADDING = 80;
+const MIN_ZOOM = 0.01;
+const MAX_ZOOM = 2;
 
 let state = {
   persons: [],
+  personIndex: new Map(),
   relationships: [],
   tree: null,
+  layout: null,
+  positionedTreeId: null,
   selectedId: null,
   zoom: 1,
   panX: 0,
@@ -25,7 +30,7 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
 function personById(id) {
-  return state.persons.find((p) => p.id === id);
+  return state.personIndex.get(id);
 }
 function fullName(p) {
   if (!p) return 'Unknown';
@@ -72,13 +77,18 @@ async function api(path, opts = {}) {
 // ------------------------------------------------------------------ data load
 async function loadTree() {
   const data = await api('/tree');
+  const shouldFitOnMobile = state.positionedTreeId !== data.tree?.id;
   state.persons = data.persons;
+  state.personIndex = new Map(data.persons.map((person) => [person.id, person]));
   state.relationships = data.relationships;
   state.tree = data.tree;
+  state.layout = null;
   $('#treeName').value = data.tree?.name || 'My Family Tree';
   $('#treeName').readOnly = !hasFamilyRole('admin');
   $('#personCount').textContent = `${state.persons.length} ${state.persons.length === 1 ? 'person' : 'people'}`;
   render();
+  if (shouldFitOnMobile && window.matchMedia('(max-width: 900px)').matches) fitTreeToViewport();
+  state.positionedTreeId = data.tree?.id || null;
   await window.loadArchiveOverview?.();
 }
 
@@ -232,183 +242,19 @@ function buildMaps() {
   };
 }
 
-// ------------------------------------------------------------------ union-find for spouse units
-function buildUnits(spousesOf) {
-  const parent = new Map(state.persons.map((p) => [p.id, p.id]));
-  function find(x) { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; }
-  function union(a, b) { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); }
-
-  for (const [a, spouses] of spousesOf.entries()) {
-    for (const b of spouses) union(a, b);
-  }
-
-  const groups = new Map(); // rootId -> [memberIds]
-  for (const p of state.persons) {
-    const root = find(p.id);
-    if (!groups.has(root)) groups.set(root, []);
-    groups.get(root).push(p.id);
-  }
-
-  const unitOf = new Map(); // personId -> unitId (use root id as unit id)
-  const units = new Map(); // unitId -> { id, members: [] }
-  let i = 0;
-  for (const [root, members] of groups.entries()) {
-    // sort members: keep stable order by original person order
-    members.sort((a, b) => state.persons.findIndex(p => p.id === a) - state.persons.findIndex(p => p.id === b));
-    const unitId = `u${i++}`;
-    units.set(unitId, { id: unitId, members });
-    for (const m of members) unitOf.set(m, unitId);
-  }
-  return { units, unitOf };
-}
-
-// ------------------------------------------------------------------ generation computation
-function computeGenerations(parentsOf, spousesOf) {
-  const gen = new Map();
-  const ids = state.persons.map((p) => p.id);
-  for (const id of ids) gen.set(id, 0);
-
-  // iterative relaxation: gen(child) >= max(gen(parent))+1 ; spouses share max gen
-  let changed = true;
-  let iterations = 0;
-  while (changed && iterations < ids.length + 20) {
-    changed = false;
-    iterations++;
-    for (const r of state.relationships) {
-      if (r.type === 'parent') {
-        const need = gen.get(r.person1_id) + 1;
-        if (gen.get(r.person2_id) < need) { gen.set(r.person2_id, need); changed = true; }
-      }
-    }
-    for (const [a, spouses] of spousesOf.entries()) {
-      for (const b of spouses) {
-        const m = Math.max(gen.get(a), gen.get(b));
-        if (gen.get(a) < m) { gen.set(a, m); changed = true; }
-        if (gen.get(b) < m) { gen.set(b, m); changed = true; }
-      }
-    }
-  }
-  return gen;
-}
-
 // ------------------------------------------------------------------ layout (positions in px)
 function computeLayout() {
-  const { parentsOf, childrenOf, spousesOf } = buildMaps();
-  const { units, unitOf } = buildUnits(spousesOf);
-  const personGen = computeGenerations(parentsOf, spousesOf);
-
-  // unit generation = min gen among members (should be equal after equalization)
-  const unitGen = new Map();
-  for (const [uid, u] of units.entries()) {
-    unitGen.set(uid, Math.min(...u.members.map((m) => personGen.get(m))));
+  if (!state.layout) {
+    state.layout = window.LineageTreeLayout.computeTreeLayout(state.persons, state.relationships, {
+      cardWidth: CARD_W,
+      cardHeight: CARD_H,
+      spouseGap: SPOUSE_GAP,
+      siblingGap: SIBLING_GAP,
+      rowHeight: ROW_HEIGHT,
+      padding: PADDING,
+    });
   }
-
-  // unit -> child units (dedup), and unit -> parent units (dedup)
-  const unitChildren = new Map();
-  const unitParents = new Map();
-  for (const uid of units.keys()) { unitChildren.set(uid, new Set()); unitParents.set(uid, new Set()); }
-
-  for (const [uid, u] of units.entries()) {
-    for (const m of u.members) {
-      for (const c of (childrenOf.get(m) || [])) {
-        const cu = unitOf.get(c);
-        if (cu && cu !== uid) unitChildren.get(uid).add(cu);
-      }
-      for (const par of (parentsOf.get(m) || [])) {
-        const pu = unitOf.get(par);
-        if (pu && pu !== uid) unitParents.get(uid).add(pu);
-      }
-    }
-  }
-
-  // choose one "layout parent" per unit to build a spanning forest for x-positioning
-  const layoutParent = new Map(); // childUnit -> parentUnit
-  const layoutChildren = new Map(); // parentUnit -> [childUnits] (ordered)
-  for (const uid of units.keys()) layoutChildren.set(uid, []);
-
-  for (const [uid, parents] of unitParents.entries()) {
-    if (parents.size > 0) {
-      const chosen = [...parents][0];
-      layoutParent.set(uid, chosen);
-    }
-  }
-  for (const [child, parent] of layoutParent.entries()) {
-    layoutChildren.get(parent).push(child);
-  }
-  // order children by their own id for stable determinism
-  for (const [k, arr] of layoutChildren.entries()) {
-    arr.sort();
-  }
-
-  const rootUnits = [...units.keys()].filter((uid) => !layoutParent.has(uid));
-  // stable order roots by min member's original index
-  rootUnits.sort((a, b) => {
-    const ai = Math.min(...units.get(a).members.map(m => state.persons.findIndex(p => p.id === m)));
-    const bi = Math.min(...units.get(b).members.map(m => state.persons.findIndex(p => p.id === m)));
-    return ai - bi;
-  });
-
-  function memberWidth(uid) {
-    const n = units.get(uid).members.length;
-    return n * CARD_W + (n - 1) * SPOUSE_GAP;
-  }
-
-  function subtreeWidth(uid) {
-    const kids = layoutChildren.get(uid) || [];
-    if (kids.length === 0) return memberWidth(uid);
-    const kidsWidth = kids.reduce((sum, k) => sum + subtreeWidth(k), 0) + (kids.length - 1) * SIBLING_GAP;
-    return Math.max(memberWidth(uid), kidsWidth);
-  }
-
-  const unitX = new Map(); // center x
-  function placeUnit(uid, leftBound) {
-    const kids = layoutChildren.get(uid) || [];
-    const myWidth = subtreeWidth(uid);
-    if (kids.length === 0) {
-      unitX.set(uid, leftBound + myWidth / 2);
-      return leftBound + myWidth;
-    }
-    let cursor = leftBound + Math.max(0, (myWidth - (kids.reduce((s, k) => s + subtreeWidth(k), 0) + (kids.length - 1) * SIBLING_GAP)) / 2);
-    const childCenters = [];
-    for (const k of kids) {
-      const w = subtreeWidth(k);
-      placeUnit(k, cursor);
-      childCenters.push(unitX.get(k));
-      cursor += w + SIBLING_GAP;
-    }
-    unitX.set(uid, (childCenters[0] + childCenters[childCenters.length - 1]) / 2);
-    return leftBound + myWidth;
-  }
-
-  let cursor = PADDING;
-  for (const r of rootUnits) {
-    const w = subtreeWidth(r);
-    placeUnit(r, cursor);
-    cursor += w + SIBLING_GAP * 1.6;
-  }
-
-  // person positions
-  const personPos = new Map(); // id -> {x, y, w, h}
-  for (const [uid, u] of units.entries()) {
-    const cx = unitX.get(uid) ?? PADDING;
-    const gen = unitGen.get(uid) ?? 0;
-    const totalW = memberWidth(uid);
-    let x = cx - totalW / 2;
-    const y = PADDING + gen * ROW_HEIGHT;
-    for (const m of u.members) {
-      personPos.set(m, { x, y, w: CARD_W, h: CARD_H });
-      x += CARD_W + SPOUSE_GAP;
-    }
-  }
-
-  // bounds
-  let maxX = 0, maxY = 0;
-  for (const pos of personPos.values()) {
-    maxX = Math.max(maxX, pos.x + pos.w);
-    maxY = Math.max(maxY, pos.y + pos.h);
-  }
-
-  return { personPos, unitOf, units, unitChildren, unitParents, unitX, unitGen, width: maxX + PADDING, height: maxY + PADDING };
+  return state.layout;
 }
 
 // ------------------------------------------------------------------ rendering
@@ -422,8 +268,7 @@ function render() {
 
   const layout = computeLayout();
   const svg = $('#treeSvg');
-  svg.setAttribute('width', Math.max(layout.width, window.innerWidth));
-  svg.setAttribute('height', Math.max(layout.height, window.innerHeight - 60));
+  syncTreeViewportSize(layout);
   svg.innerHTML = '';
 
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -598,8 +443,14 @@ function makeCardNode(p, pos) {
 // ------------------------------------------------------------------ selection & side panel
 function selectPerson(id) {
   state.selectedId = id;
-  render();
+  syncSelectedCard(id);
   openSidePanel(id);
+}
+
+function syncSelectedCard(selectedId) {
+  for (const card of document.querySelectorAll('.person-card')) {
+    card.classList.toggle('selected', card.dataset.personId === String(selectedId));
+  }
 }
 
 function openSidePanel(id) {
@@ -757,43 +608,171 @@ function escapeHtml(str) {
 $('#closePanelBtn').addEventListener('click', () => {
   $('#sidePanel').classList.add('hidden');
   state.selectedId = null;
-  render();
+  syncSelectedCard(null);
 });
 
 // ------------------------------------------------------------------ pan / zoom
-let isDragging = false, dragStart = { x: 0, y: 0 }, panStart = { x: 0, y: 0 };
-
 const canvasWrap = $('#canvasWrap');
-canvasWrap.addEventListener('mousedown', (e) => {
-  if (e.target.closest('.person-card')) return;
-  isDragging = true;
-  canvasWrap.classList.add('dragging');
-  dragStart = { x: e.clientX, y: e.clientY };
-  panStart = { x: state.panX, y: state.panY };
-});
-window.addEventListener('mousemove', (e) => {
-  if (!isDragging) return;
-  state.panX = panStart.x + (e.clientX - dragStart.x);
-  state.panY = panStart.y + (e.clientY - dragStart.y);
-  applyTransformOnly();
-});
-window.addEventListener('mouseup', () => { isDragging = false; canvasWrap.classList.remove('dragging'); });
+const activePointers = new Map();
+let dragGesture = null;
+let pinchGesture = null;
+let transformFrame = null;
 
 function applyTransformOnly() {
-  const vp = $('#viewport');
-  if (vp) vp.setAttribute('transform', `translate(${state.panX},${state.panY}) scale(${state.zoom})`);
+  if (transformFrame !== null) return;
+  transformFrame = requestAnimationFrame(() => {
+    transformFrame = null;
+    const viewport = $('#viewport');
+    if (viewport) viewport.setAttribute('transform', `translate(${state.panX},${state.panY}) scale(${state.zoom})`);
+    const zoomLabel = $('#treeZoomLabel');
+    if (zoomLabel) zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
+  });
 }
 
-$('#zoomInBtn').addEventListener('click', () => { state.zoom = Math.min(state.zoom + 0.1, 2); applyTransformOnly(); });
-$('#zoomOutBtn').addEventListener('click', () => { state.zoom = Math.max(state.zoom - 0.1, 0.3); applyTransformOnly(); });
-$('#resetViewBtn').addEventListener('click', () => { state.zoom = 1; state.panX = 0; state.panY = 0; applyTransformOnly(); });
+function clampZoom(zoom) {
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+}
+
+function zoomAroundPoint(nextZoom, clientX, clientY) {
+  const rect = canvasWrap.getBoundingClientRect();
+  const localX = clientX - rect.left;
+  const localY = clientY - rect.top;
+  const worldX = (localX - state.panX) / state.zoom;
+  const worldY = (localY - state.panY) / state.zoom;
+  state.zoom = clampZoom(nextZoom);
+  state.panX = localX - worldX * state.zoom;
+  state.panY = localY - worldY * state.zoom;
+  applyTransformOnly();
+}
+
+function zoomFromViewportCenter(direction) {
+  const rect = canvasWrap.getBoundingClientRect();
+  const factor = direction > 0 ? 1.25 : 0.8;
+  zoomAroundPoint(state.zoom * factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+}
+
+function syncTreeViewportSize(layout = state.layout) {
+  const svg = $('#treeSvg');
+  const rect = canvasWrap.getBoundingClientRect();
+  svg.setAttribute('width', Math.max(layout?.width || 0, Math.ceil(rect.width)));
+  svg.setAttribute('height', Math.max(layout?.height || 0, Math.ceil(rect.height)));
+}
+
+function fitTreeToViewport() {
+  if (!state.persons.length) return;
+  const layout = computeLayout();
+  const rect = canvasWrap.getBoundingClientRect();
+  const inset = rect.width <= 640 ? 20 : 42;
+  const availableWidth = Math.max(1, rect.width - inset * 2);
+  const availableHeight = Math.max(1, rect.height - inset * 2);
+  state.zoom = clampZoom(Math.min(1, availableWidth / layout.width, availableHeight / layout.height));
+  state.panX = (rect.width - layout.width * state.zoom) / 2;
+  state.panY = (rect.height - layout.height * state.zoom) / 2;
+  applyTransformOnly();
+}
+
+function pointerDistance(first, second) {
+  return Math.hypot(second.x - first.x, second.y - first.y);
+}
+
+function pointerCenter(first, second) {
+  return { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+}
+
+function startPinchGesture() {
+  const [first, second] = [...activePointers.values()];
+  if (!first || !second) return;
+  const rect = canvasWrap.getBoundingClientRect();
+  const center = pointerCenter(first, second);
+  const localCenter = { x: center.x - rect.left, y: center.y - rect.top };
+  pinchGesture = {
+    distance: Math.max(1, pointerDistance(first, second)),
+    zoom: state.zoom,
+    worldX: (localCenter.x - state.panX) / state.zoom,
+    worldY: (localCenter.y - state.panY) / state.zoom,
+  };
+  dragGesture = null;
+}
+
+canvasWrap.addEventListener('pointerdown', (event) => {
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  if (event.target.closest('.person-card, button, input, select, a')) return;
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  canvasWrap.setPointerCapture?.(event.pointerId);
+  canvasWrap.classList.add('dragging');
+  if (activePointers.size === 1) {
+    dragGesture = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      panX: state.panX,
+      panY: state.panY,
+    };
+  } else if (activePointers.size === 2) {
+    startPinchGesture();
+  }
+});
+
+canvasWrap.addEventListener('pointermove', (event) => {
+  if (!activePointers.has(event.pointerId)) return;
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  if (activePointers.size >= 2 && pinchGesture) {
+    event.preventDefault();
+    const [first, second] = [...activePointers.values()];
+    const rect = canvasWrap.getBoundingClientRect();
+    const center = pointerCenter(first, second);
+    state.zoom = clampZoom(pinchGesture.zoom * pointerDistance(first, second) / pinchGesture.distance);
+    state.panX = center.x - rect.left - pinchGesture.worldX * state.zoom;
+    state.panY = center.y - rect.top - pinchGesture.worldY * state.zoom;
+    applyTransformOnly();
+  } else if (dragGesture?.pointerId === event.pointerId) {
+    event.preventDefault();
+    state.panX = dragGesture.panX + event.clientX - dragGesture.x;
+    state.panY = dragGesture.panY + event.clientY - dragGesture.y;
+    applyTransformOnly();
+  }
+});
+
+function finishPointerGesture(event) {
+  if (!activePointers.has(event.pointerId)) return;
+  activePointers.delete(event.pointerId);
+  if (activePointers.size === 0) {
+    dragGesture = null;
+    pinchGesture = null;
+    canvasWrap.classList.remove('dragging');
+    return;
+  }
+  const [remainingId, remaining] = activePointers.entries().next().value;
+  pinchGesture = null;
+  dragGesture = {
+    pointerId: remainingId,
+    x: remaining.x,
+    y: remaining.y,
+    panX: state.panX,
+    panY: state.panY,
+  };
+}
+
+canvasWrap.addEventListener('pointerup', finishPointerGesture);
+canvasWrap.addEventListener('pointercancel', finishPointerGesture);
+canvasWrap.addEventListener('lostpointercapture', finishPointerGesture);
+
+$('#zoomInBtn').addEventListener('click', () => zoomFromViewportCenter(1));
+$('#zoomOutBtn').addEventListener('click', () => zoomFromViewportCenter(-1));
+$('#resetViewBtn').addEventListener('click', fitTreeToViewport);
+$('#treeZoomInBtn').addEventListener('click', () => zoomFromViewportCenter(1));
+$('#treeZoomOutBtn').addEventListener('click', () => zoomFromViewportCenter(-1));
+$('#fitTreeBtn').addEventListener('click', fitTreeToViewport);
 
 canvasWrap.addEventListener('wheel', (e) => {
-  if (!e.ctrlKey && !e.metaKey) return;
   e.preventDefault();
-  const delta = e.deltaY > 0 ? -0.05 : 0.05;
-  state.zoom = Math.min(2, Math.max(0.3, state.zoom + delta));
-  applyTransformOnly();
+  if (e.ctrlKey || e.metaKey) {
+    zoomAroundPoint(state.zoom * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+  } else {
+    state.panX -= e.deltaX;
+    state.panY -= e.deltaY;
+    applyTransformOnly();
+  }
 }, { passive: false });
 
 function centerOnPerson(id) {
@@ -1095,8 +1074,18 @@ $('#deletePersonBtn').addEventListener('click', async () => {
   await loadTree();
 });
 
-// re-render on window resize (keeps svg sized reasonably)
-window.addEventListener('resize', () => render());
+// Mobile browsers resize the visual viewport while their address bar moves.
+// Only resize the SVG surface; the cached genealogy and card DOM remain intact.
+let viewportResizeFrame = null;
+function queueTreeViewportResize() {
+  if (viewportResizeFrame !== null) return;
+  viewportResizeFrame = requestAnimationFrame(() => {
+    viewportResizeFrame = null;
+    syncTreeViewportSize();
+  });
+}
+window.addEventListener('resize', queueTreeViewportResize, { passive: true });
+window.visualViewport?.addEventListener('resize', queueTreeViewportResize, { passive: true });
 
 // Toggle relative label input
 $('#f_relation_type').addEventListener('change', (e) => {

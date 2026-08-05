@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "npm run test:family-access && npm run test:legacy-migration",
+    "test": "npm run test:tree-layout && npm run test:family-access && npm run test:legacy-migration",
+    "test:tree-layout": "node --test tests/tree-layout.test.js",
     "test:family-access": "node --test tests/family-sharing.test.js",
     "test:legacy-migration": "node --test tests/legacy-migration.test.js"
   },

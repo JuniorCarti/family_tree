@@ -38,6 +38,7 @@ body {
 
 #app {
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -219,9 +220,14 @@ body {
 /* ============ Canvas ============ */
 .canvas-wrap {
   flex: 1;
+  min-width: 0;
+  min-height: 180px;
   position: relative;
   overflow: hidden;
   cursor: grab;
+  touch-action: none;
+  overscroll-behavior: contain;
+  contain: layout paint;
   background:
     linear-gradient(var(--parchment), var(--parchment)),
     repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(180, 160, 120, 0.08) 40px);
@@ -233,6 +239,7 @@ body {
 
 #treeSvg {
   display: block;
+  max-width: none;
 }
 
 .empty-state {
@@ -1730,6 +1737,189 @@ body {
 
   .btn {
     transition-duration: .01ms;
+  }
+}
+
+/* ==========================================================================
+   Release 6 — responsive tree navigation and touch workspace
+   ========================================================================== */
+.tree-viewport-tools {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 5px;
+  border: 1px solid rgba(143, 101, 38, .3);
+  border-radius: 14px;
+  background: rgba(251, 247, 236, .94);
+  box-shadow: 0 8px 28px rgba(51, 38, 28, .16);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.tree-viewport-tools button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font: 700 16px/1 var(--font-body);
+  cursor: pointer;
+}
+
+.tree-viewport-tools button:hover,
+.tree-viewport-tools button:focus-visible {
+  background: var(--parchment-deep);
+  outline: none;
+}
+
+.tree-viewport-tools button:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--gold-deep);
+}
+
+.tree-viewport-tools output {
+  min-width: 43px;
+  color: var(--ink-soft);
+  font: 600 10px/1 var(--font-mono);
+  text-align: center;
+}
+
+.tree-viewport-tools .tree-fit-btn {
+  font-size: 12px;
+}
+
+.tree-fit-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tree-tool-divider {
+  width: 1px;
+  height: 24px;
+  margin: 0 2px;
+  background: var(--card-edge);
+}
+
+.tree-gesture-hint {
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: 76px;
+  z-index: 4;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100% - 32px);
+  padding: 8px 12px;
+  border: 1px solid rgba(143, 101, 38, .22);
+  border-radius: 999px;
+  background: rgba(251, 247, 236, .9);
+  color: var(--ink-soft);
+  box-shadow: var(--shadow);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: tree-hint-away .6s ease 4s forwards;
+}
+
+.tree-gesture-hint i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--gold);
+}
+
+.tree-gesture-icon {
+  color: var(--gold-deep);
+  font-size: 15px;
+}
+
+@keyframes tree-hint-away {
+  to {
+    opacity: 0;
+    visibility: hidden;
+    transform: translate(-50%, 5px);
+  }
+}
+
+@media (max-width: 900px) {
+  #zoomOutBtn,
+  #zoomInBtn,
+  #resetViewBtn {
+    display: none;
+  }
+
+  #relLegend {
+    display: none !important;
+  }
+
+  .tree-viewport-tools {
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .tree-gesture-hint {
+    display: flex;
+  }
+
+  .person-card .card-add-btn {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 520px) {
+  .canvas-wrap {
+    min-height: 220px;
+  }
+
+  .tree-viewport-tools {
+    left: 50%;
+    right: auto;
+    width: max-content;
+    max-width: calc(100% - 20px);
+    transform: translateX(-50%);
+  }
+
+  .tree-viewport-tools button {
+    min-width: 38px;
+    min-height: 38px;
+  }
+
+  .tree-gesture-hint {
+    bottom: 74px;
+  }
+}
+
+@media (max-width: 340px) {
+  .tree-viewport-tools .tree-fit-btn span {
+    display: none;
+  }
+
+  .tree-viewport-tools output {
+    min-width: 38px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-gesture-hint {
+    animation: none;
   }
 }
 
