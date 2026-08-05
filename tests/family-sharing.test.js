@@ -37,6 +37,11 @@ test('payment approval gates shared-family access and roles', async (t) => {
   assert.match(shell.text, /Unlock your family archive/);
   assert.match(shell.text, /254113245740/);
   assert.match(shell.text, /Lineage will never ask for your M-Pesa PIN/);
+  assert.match(shell.text, /class="auth-scene"/);
+  assert.match(shell.text, /class="modal auth-card"/);
+  assert.match(shell.text, /id="authSubtitle"/);
+  assert.match(shell.text, /id="superadminModalOverlay"/);
+  assert.match(shell.text, /id="logoutBtn"/);
 
   const owner = request.agent(app);
   const ownerSignup = await signup(owner, { email: ownerEmail, family_name: 'Test Lineage' });

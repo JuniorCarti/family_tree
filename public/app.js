@@ -1194,6 +1194,9 @@ function setAuthMode(loginMode) {
   isLoginMode = loginMode;
   const joining = Boolean(inviteToken && invitationInfo);
   $('#authTitle').textContent = loginMode ? 'Sign In to Lineage' : (joining ? `Join ${invitationInfo.family_name}` : 'Create an Account');
+  $('#authSubtitle').textContent = loginMode
+    ? 'Continue building the story your family shares.'
+    : (joining ? 'Create your account to join this shared family archive.' : 'Begin a private family archive that can grow across generations.');
   $('#authSubmitBtn').textContent = loginMode ? 'Sign In' : (joining ? 'Create account and join' : 'Sign Up');
   $('#authToggleLink').textContent = loginMode ? "Don't have an account? Sign up." : 'Already have an account? Sign in.';
   $('#authFamilyNameRow').classList.toggle('hidden', loginMode || joining);

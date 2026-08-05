@@ -16,17 +16,40 @@
 
 <body>
   <div id="authScreen" class="auth-wrapper hidden">
-    <div class="modal" style="width: 360px;">
-      <div class="modal-header"
-        style="justify-content: center; border-bottom: 1px solid var(--card-edge); padding-bottom: 16px;">
-        <h3 id="authTitle" style="font-size: 24px;">Sign In to Lineage</h3>
+    <div class="auth-scene" aria-hidden="true">
+      <div class="auth-connection auth-connection-one"></div>
+      <div class="auth-connection auth-connection-two"></div>
+      <div class="auth-family-float auth-family-float-one">
+        <div class="auth-mini-family"><i></i><i></i><i></i></div><span>Three generations</span>
       </div>
-      <form id="authForm" style="padding: 24px 20px;">
-        <div id="authError" class="hidden"
+      <div class="auth-family-float auth-family-float-two">
+        <div class="auth-mini-family auth-mini-family-pair"><i></i><i></i></div><span>Family stories</span>
+      </div>
+      <div class="auth-family-float auth-family-float-three">
+        <div class="auth-node-cluster"><i></i><i></i><i></i></div><span>Shared roots</span>
+      </div>
+      <div class="auth-family-float auth-family-float-four">
+        <div class="auth-mini-family"><i></i><i></i><i></i></div><span>Connected lives</span>
+      </div>
+      <div class="auth-ancestry-mark auth-ancestry-mark-one">Est. 1924</div>
+      <div class="auth-ancestry-mark auth-ancestry-mark-two">Our lineage</div>
+    </div>
 
-          style="color: #a13a3a; margin-bottom: 14px; font-size: 13px; text-align: center; background: #faeaea; padding: 8px; border-radius: 6px;">
-
-        </div>
+    <section class="modal auth-card" aria-labelledby="authTitle">
+      <div class="auth-card-heading">
+        <span class="auth-card-seal" aria-hidden="true">
+          <svg viewBox="0 0 44 44" width="38" height="38">
+            <circle cx="22" cy="22" r="20" fill="none" stroke="currentColor" stroke-width="1.4" />
+            <path d="M22 10v24M14 18h16M17 18v7M27 18v7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            <circle cx="14" cy="28" r="3" fill="currentColor" /><circle cx="22" cy="35" r="3" fill="currentColor" /><circle cx="30" cy="28" r="3" fill="currentColor" />
+          </svg>
+        </span>
+        <p class="auth-eyebrow">PRESERVE &middot; CONNECT &middot; REMEMBER</p>
+        <h3 id="authTitle">Sign In to Lineage</h3>
+        <p id="authSubtitle" class="auth-subtitle">Continue building the story your family shares.</p>
+      </div>
+      <form id="authForm" class="auth-form">
+        <div id="authError" class="hidden auth-error"></div>
         <div id="inviteNotice" class="hidden invite-notice"></div>
 
         <div class="field-row" style="margin-bottom: 16px;">
@@ -66,7 +89,7 @@
             up.</a>
         </div>
       </form>
-    </div>
+    </section>
   </div>
 
   <!-- ============ Forgot Password Modal ============ -->
@@ -208,10 +231,10 @@
         <button class="btn btn-ghost" id="zoomInBtn" title="Zoom in">+</button>
         <button class="btn btn-ghost" id="resetViewBtn" title="Reset view">Reset</button>
         <button class="btn btn-primary" id="addPersonBtn">+ Add person</button>
-        <button class="btn btn-ghost" id="mergeBtn" style="margin-left: 12px;">Find Duplicates</button>
-        <button class="btn btn-ghost" id="exportBtn" style="margin-left: 12px;">Download Excel</button>
-        <button class="btn btn-ghost hidden" id="superadminBtn" style="margin-left: 12px;">Platform approvals</button>
-        <button class="btn btn-ghost" id="logoutBtn" style="margin-left: 12px;">Log out</button>
+        <button class="btn btn-ghost" id="mergeBtn">Find Duplicates</button>
+        <button class="btn btn-ghost" id="exportBtn">Download Excel</button>
+        <button class="btn btn-ghost hidden" id="superadminBtn">Platform approvals</button>
+        <button class="btn btn-ghost" id="logoutBtn">Log out</button>
       </div>
     </header>
 
