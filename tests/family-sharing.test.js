@@ -1,11 +1,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 process.env.NODE_ENV = 'test';
 process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'family-sharing-test-secret';
 process.env.ACCOUNT_UNLOCK_FEE_KES = '500';
 process.env.MPESA_PAYMENT_PHONE = '254113245740';
+const mediaTestDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lineage-media-test-'));
+process.env.MEDIA_LOCAL_DIR = mediaTestDir;
 
 const password = 'correct-horse-battery-staple';
 const unique = Date.now();
@@ -30,7 +35,10 @@ async function approve(superadmin, userId) {
 
 test('payment approval gates shared-family access and roles', async (t) => {
   await Promise.all([db.ready, familyAccess.ready, platformAccess.ready]);
-  t.after(async () => db.pool.end());
+  t.after(async () => {
+    await db.pool.end();
+    fs.rmSync(mediaTestDir, { recursive: true, force: true });
+  });
 
   const anonymousSession = await request(app).get('/api/auth/session');
   assert.equal(anonymousSession.status, 200, anonymousSession.text);
@@ -63,6 +71,13 @@ test('payment approval gates shared-family access and roles', async (t) => {
 
   const firstPerson = await owner.post('/api/persons').send({ first_name: 'Amina', last_name: 'Test' });
   assert.equal(firstPerson.status, 201, firstPerson.text);
+  const mediaUpload = await owner.post('/api/upload')
+    .attach('photo', Buffer.from('test-image-data'), { filename: 'portrait.png', contentType: 'image/png' });
+  assert.equal(mediaUpload.status, 200, mediaUpload.text);
+  assert.match(mediaUpload.body.url, /^\/api\/media\/[0-9a-f-]+$/);
+  const mediaRead = await owner.get(mediaUpload.body.url);
+  assert.equal(mediaRead.status, 200, mediaRead.text);
+  assert.equal(mediaRead.headers['content-type'], 'image/png');
 
   const viewerInvite = await owner.post('/api/family/invitations').send({ email: viewerEmail, role: 'viewer' });
   assert.equal(viewerInvite.status, 201, viewerInvite.text);
@@ -75,6 +90,15 @@ test('payment approval gates shared-family access and roles', async (t) => {
   assert.equal(viewerSignup.status, 201, viewerSignup.text);
   assert.equal(viewerSignup.body.account_status, 'pending');
   assert.equal(viewerSignup.body.active_family_role, 'viewer');
+  assert.equal(viewerSignup.body.email_verified_at, null);
+
+  const unverifiedTree = await viewer.get('/api/tree');
+  assert.equal(unverifiedTree.status, 403, unverifiedTree.text);
+  assert.equal(unverifiedTree.body.code, 'EMAIL_UNVERIFIED');
+  const verified = await viewer.post('/api/auth/verify-email').send({
+    token: viewerSignup.body.test_verification_token
+  });
+  assert.equal(verified.status, 200, verified.text);
 
   const lockedTree = await viewer.get('/api/tree');
   assert.equal(lockedTree.status, 403, lockedTree.text);
@@ -128,6 +152,10 @@ test('payment approval gates shared-family access and roles', async (t) => {
     invite_token: contributorInvite.body.invite_token
   });
   assert.equal(contributorSignup.body.account_status, 'pending');
+  const contributorVerified = await contributor.post('/api/auth/verify-email').send({
+    token: contributorSignup.body.test_verification_token
+  });
+  assert.equal(contributorVerified.status, 200, contributorVerified.text);
 
   const noPaymentApproval = await approve(owner, contributorSignup.body.id);
   assert.equal(noPaymentApproval.status, 409, noPaymentApproval.text);
@@ -176,4 +204,33 @@ test('payment approval gates shared-family access and roles', async (t) => {
   await owner.post(`/api/families/${originalFamilyId}/select`);
   const originalTree = await owner.get('/api/tree');
   assert.equal(originalTree.body.persons.length, 2);
+
+  const audit = await owner.get('/api/family/audit');
+  assert.equal(audit.status, 200, audit.text);
+  assert.ok(audit.body.entries.some((entry) => entry.action === 'person.created'));
+
+  const unknownReset = await request(app).post('/api/auth/request-password-reset').send({
+    email: `missing-${unique}@example.test`
+  });
+  assert.equal(unknownReset.status, 200, unknownReset.text);
+  assert.doesNotMatch(unknownReset.text, /not found/i);
+
+  const resetRequest = await request(app).post('/api/auth/request-password-reset').send({ email: viewerEmail });
+  assert.equal(resetRequest.status, 200, resetRequest.text);
+  assert.ok(resetRequest.body.test_token);
+  const newPassword = 'new-correct-horse-battery-staple';
+  const reset = await request(app).post('/api/auth/reset-password').send({
+    token: resetRequest.body.test_token,
+    new_password: newPassword
+  });
+  assert.equal(reset.status, 200, reset.text);
+  const reusedReset = await request(app).post('/api/auth/reset-password').send({
+    token: resetRequest.body.test_token,
+    new_password: newPassword
+  });
+  assert.equal(reusedReset.status, 400, reusedReset.text);
+  const oldPasswordLogin = await request(app).post('/api/auth/login').send({ email: viewerEmail, password });
+  assert.equal(oldPasswordLogin.status, 401, oldPasswordLogin.text);
+  const newPasswordLogin = await request(app).post('/api/auth/login').send({ email: viewerEmail, password: newPassword });
+  assert.equal(newPasswordLogin.status, 200, newPasswordLogin.text);
 });

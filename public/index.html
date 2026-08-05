@@ -59,14 +59,14 @@
 
         <div class="field-row" style="margin-bottom: 16px; position: relative;">
           <label>Password</label>
-          <input type="password" id="authPassword" required style="padding-right: 36px;" />
+          <input type="password" id="authPassword" minlength="12" required style="padding-right: 36px;" />
           <button type="button" id="togglePasswordBtn"
             style="position: absolute; right: 8px; top: 28px; background: none; border: none; cursor: pointer; color: var(--ink-soft); font-size: 16px;">👁</button>
         </div>
 
         <div class="field-row hidden" id="authConfirmPasswordRow" style="margin-bottom: 16px; position: relative;">
           <label>Confirm Password</label>
-          <input type="password" id="authConfirmPassword" style="padding-right: 36px;" />
+          <input type="password" id="authConfirmPassword" minlength="12" style="padding-right: 36px;" />
           <button type="button" id="toggleConfirmPasswordBtn"
             style="position: absolute; right: 8px; top: 28px; background: none; border: none; cursor: pointer; color: var(--ink-soft); font-size: 16px;">👁</button>
         </div>
@@ -103,14 +103,14 @@
         <div id="resetMessage" class="hidden"
           style="margin-bottom: 14px; font-size: 13px; text-align: center; padding: 8px; border-radius: 6px;"></div>
 
-        <div class="field-row" style="margin-bottom: 16px;">
+        <div class="field-row" id="resetEmailRow" style="margin-bottom: 16px;">
           <label>Email</label>
-          <input type="text" id="resetIdentifier" required />
+          <input type="email" id="resetIdentifier" autocomplete="email" required />
         </div>
 
-        <div class="field-row" style="margin-bottom: 16px; position: relative;">
+        <div class="field-row hidden" id="resetPasswordRow" style="margin-bottom: 16px; position: relative;">
           <label>New Password</label>
-          <input type="password" id="resetPassword" required style="padding-right: 36px;" />
+          <input type="password" id="resetPassword" minlength="12" autocomplete="new-password" style="padding-right: 36px;" />
           <button type="button" id="toggleResetPasswordBtn"
             style="position: absolute; right: 8px; top: 28px; background: none; border: none; cursor: pointer; color: var(--ink-soft); font-size: 16px;">👁</button>
         </div>
@@ -160,6 +160,11 @@
         </div>
 
         <div id="approvalMessage" class="hidden approval-message"></div>
+        <div id="verificationGate" class="hidden payment-review-state">
+          <strong>Verify your email first.</strong>
+          <span>We sent a secure verification link to your email address. Payment access will appear after verification.</span>
+          <button class="btn btn-ghost" id="resendVerificationBtn" type="button">Resend verification email</button>
+        </div>
         <form id="paymentProofForm" class="payment-proof-form">
           <div class="field-row">
             <label>M-Pesa transaction code *</label>

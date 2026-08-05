@@ -11,16 +11,17 @@ Lineage is a full-stack family tree application for building shared, multi-gener
 ## Features
 
 - Individual email accounts with PostgreSQL-backed sessions
+- Verified email addresses and expiring, single-use password recovery links
 - KES 500 manual M-Pesa unlock with platform-superadmin approval for new signups
 - Shared family trees with invitation links and role-based access
 - Viewer, contributor, administrator, and owner permissions
 - Multiple family trees per account with an active-tree selector
 - Parent, spouse, sibling, grandparent, grandchild, cousin, and custom relationships
 - Interactive SVG layout with search, pan, and zoom
-- Person editing, photo upload, duplicate detection, merging, and Excel export
+- Person editing, private Cloud Storage media, audit history, duplicate detection, merging, and Excel export
 - Automatic migration of existing account-owned trees into shared families
 
-See [Family Access and Sharing](docs/FAMILY_ACCESS.md) for family roles and invitations. See [Account Unlock and Superadmin Approval](docs/ACCOUNT_APPROVAL.md) for the KES 500 M-Pesa workflow, review rules, and platform security boundary.
+See [Family Access and Sharing](docs/FAMILY_ACCESS.md) for family roles and invitations. See [Account Unlock and Superadmin Approval](docs/ACCOUNT_APPROVAL.md) for the KES 500 M-Pesa workflow. See [Release 1: Trust Foundation](docs/RELEASE_1_TRUST.md) for email, recovery, storage, audit, and rollout configuration.
 
 ## Technology
 
@@ -30,6 +31,7 @@ See [Family Access and Sharing](docs/FAMILY_ACCESS.md) for family roles and invi
 | Backend | Node.js 20 and Express |
 | Database | PostgreSQL using `pg` |
 | Sessions | `express-session` with `connect-pg-simple` |
+| Media | Private Google Cloud Storage objects |
 | API hosting | Google Cloud Run |
 | Static hosting | Firebase Hosting |
 
@@ -92,11 +94,12 @@ Firebase preserves the `__session` cookie for rewritten `/api/**` requests. Expr
 
 | Prefix | Purpose |
 | --- | --- |
-| `/api/auth` | Signup, login, logout, and current account context |
+| `/api/auth` | Signup, verification, login, logout, recovery, and current account context |
 | `/api/account` | Lock status and M-Pesa payment-reference submission |
 | `/api/superadmin` | Manual payment review and platform account approval |
 | `/api/families` | List, create, and select family trees |
-| `/api/family` | Members, invitations, and role administration |
+| `/api/family` | Members, invitations, role administration, and audit history |
+| `/api/media` | Authenticated active-family media delivery |
 | `/api/persons` | People in the active family |
 | `/api/relationships` | Relationships in the active family |
 | `/api/tree` | Shared tree payload and administrator rename |
@@ -113,7 +116,7 @@ The family-access integration test requires a disposable PostgreSQL database:
 $env:DATABASE_URL='postgresql://postgres:password@127.0.0.1:55432/lineage_test'
 $env:DATABASE_SSL='false'
 $env:SESSION_SECRET='local-test-secret'
-npm run test:family-access
+npm test
 ```
 
 ## Deployment and collaboration
@@ -122,11 +125,12 @@ npm run test:family-access
 - [Contribution workflow](CONTRIBUTING.md)
 - [Family access design and operations](docs/FAMILY_ACCESS.md)
 - [Account unlock and superadmin approval](docs/ACCOUNT_APPROVAL.md)
+- [Trust foundation release and rollout](docs/RELEASE_1_TRUST.md)
 
 Use a feature branch and pull request rather than committing directly to `main`.
 
 ## Current limitations
 
-- Password recovery is intentionally unavailable until verified email delivery and expiring, single-use reset tokens are implemented.
-- Profile uploads use Cloud Run's ephemeral filesystem and should move to Cloud Storage for durable production use.
+- MFA, passkeys, automated backups, soft deletion, and undo/restore are not implemented yet.
+- SMTP and MEDIA_BUCKET must be configured before deploying the new production trust flows.
 - The Express API remains mostly monolithic; route/service separation would improve maintainability as it grows.

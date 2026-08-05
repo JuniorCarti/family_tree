@@ -1082,7 +1082,10 @@ $('#f_relation_type').addEventListener('change', (e) => {
 
 // ------------------------------------------------------------------ Family access and authentication
 const FAMILY_ROLE_LEVEL = { viewer: 1, contributor: 2, admin: 3, owner: 4 };
-const inviteToken = new URLSearchParams(window.location.search).get('invite');
+const startupParams = new URLSearchParams(window.location.search);
+const inviteToken = startupParams.get('invite');
+const verificationToken = startupParams.get('verify');
+const resetToken = startupParams.get('reset');
 let invitationInfo = null;
 let isLoginMode = true;
 
@@ -1167,10 +1170,14 @@ async function loadApprovalAccess() {
 
   const form = $('#paymentProofForm');
   const review = $('#paymentReviewState');
-  form.classList.toggle('hidden', access.account_status === 'payment_submitted' || access.account_status === 'approved');
+  const needsVerification = !access.email_verified_at;
+  $('#verificationGate').classList.toggle('hidden', !needsVerification);
+  form.classList.toggle('hidden', needsVerification || access.account_status === 'payment_submitted' || access.account_status === 'approved');
   review.className = 'hidden payment-review-state';
 
-  if (access.account_status === 'payment_submitted') {
+  if (needsVerification) {
+    $('#approvalLead').textContent = 'Confirm your email address before submitting payment details. This protects your family records and account recovery.';
+  } else if (access.account_status === 'payment_submitted') {
     review.textContent = `Payment code ${access.mpesa_reference} was submitted. A superadmin will compare it with the M-Pesa payment before unlocking your account.`;
     review.className = 'payment-review-state';
     $('#approvalLead').textContent = 'Your payment details are waiting for manual verification. You can keep this page open or check again later.';
@@ -1203,7 +1210,7 @@ function setAuthMode(loginMode) {
   $('#authFamilyName').required = !loginMode && !joining;
   $('#authConfirmPasswordRow').classList.toggle('hidden', loginMode);
   $('#authConfirmPassword').required = !loginMode;
-  $('#authForgotPasswordWrap').classList.add('hidden');
+  $('#authForgotPasswordWrap').classList.toggle('hidden', !loginMode);
   $('#authEmailLabel').textContent = 'Email';
   $('#authError').classList.add('hidden');
 }
@@ -1424,6 +1431,18 @@ $('#refreshApprovalBtn').addEventListener('click', async () => {
   }
 });
 
+$('#resendVerificationBtn').addEventListener('click', async () => {
+  try {
+    const response = await api('/auth/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email: currentUser?.email })
+    });
+    showApprovalMessage(response.message, 'success');
+  } catch (error) {
+    showApprovalMessage(error.message);
+  }
+});
+
 $('#approvalLogoutBtn').addEventListener('click', async () => {
   await api('/auth/logout', { method: 'POST' }).catch(() => {});
   window.location.reload();
@@ -1522,6 +1541,11 @@ $('#authForgotPasswordLink').addEventListener('click', (event) => {
   $('#resetMessage').classList.add('hidden');
   $('#resetIdentifier').value = $('#authEmail').value;
   $('#resetPassword').value = '';
+  $('#resetEmailRow').classList.remove('hidden');
+  $('#resetPasswordRow').classList.add('hidden');
+  $('#resetIdentifier').required = true;
+  $('#resetPassword').required = false;
+  $('#resetSubmitBtn').textContent = 'Send reset link';
 });
 
 $('#resetModalClose').addEventListener('click', () => $('#resetModalOverlay').classList.add('hidden'));
@@ -1530,14 +1554,23 @@ $('#resetForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   try {
     $('#resetSubmitBtn').disabled = true;
-    await api('/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ identifier: $('#resetIdentifier').value.trim(), new_password: $('#resetPassword').value })
-    });
+    if (resetToken) {
+      await api('/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token: resetToken, new_password: $('#resetPassword').value })
+      });
+    } else {
+      await api('/auth/request-password-reset', {
+        method: 'POST',
+        body: JSON.stringify({ email: $('#resetIdentifier').value.trim() })
+      });
+    }
     $('#resetMessage').classList.remove('hidden');
     $('#resetMessage').style.backgroundColor = '#e1f5e8';
     $('#resetMessage').style.color = '#2d6a4f';
-    $('#resetMessage').textContent = 'Password reset successfully. You can now sign in.';
+    $('#resetMessage').textContent = resetToken
+      ? 'Password reset successfully. You can now sign in.'
+      : 'If an account exists for that email, a secure reset link has been sent.';
   } catch (error) {
     $('#resetMessage').classList.remove('hidden');
     $('#resetMessage').style.backgroundColor = '#faeaea';
@@ -1595,6 +1628,32 @@ $('#logoutBtn').addEventListener('click', async () => {
 
 async function initializeApp() {
   await loadInvitationNotice();
+  if (resetToken) {
+    $('#app').classList.add('hidden');
+    $('#approvalScreen').classList.add('hidden');
+    $('#authScreen').classList.remove('hidden');
+    $('#resetModalOverlay').classList.remove('hidden');
+    $('#resetEmailRow').classList.add('hidden');
+    $('#resetPasswordRow').classList.remove('hidden');
+    $('#resetIdentifier').required = false;
+    $('#resetPassword').required = true;
+    $('#resetSubmitBtn').textContent = 'Set new password';
+    return;
+  }
+  if (verificationToken) {
+    try {
+      await api('/auth/verify-email', {
+        method: 'POST',
+        body: JSON.stringify({ token: verificationToken })
+      });
+      startupParams.delete('verify');
+      const query = startupParams.toString();
+      window.history.replaceState({}, document.title, window.location.pathname + (query ? `?${query}` : ''));
+    } catch (error) {
+      $('#authError').textContent = error.message;
+      $('#authError').classList.remove('hidden');
+    }
+  }
   try {
     const session = await api('/auth/session');
     if (!session.authenticated) {

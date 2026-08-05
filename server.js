@@ -1,27 +1,32 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const bcrypt = require('bcrypt');
+const helmet = require('helmet');
+const { rateLimit } = require('express-rate-limit');
 const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 const ExcelJS = require('exceljs');
 const db = require('./db');
 const familyAccess = require('./family-access');
 const platformAccess = require('./platform-access');
+const trustAccess = require('./trust-access');
+const mediaStorage = require('./media-storage');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+if (process.env.NODE_ENV === 'production' && (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32)) {
+  throw new Error('SESSION_SECRET must be set to at least 32 characters in production');
+}
 
 // Firebase Hosting forwards requests through a proxy before they reach
 // Cloud Run. Trust that proxy so secure session cookies are set correctly.
 app.set('trust proxy', 1);
 
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
 // Session configuration
 app.use(session({
@@ -33,31 +38,42 @@ app.use(session({
   cookie: {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    maxAge: 24 * 60 * 60 * 1000,
+    sameSite: 'lax'
   }
 }));
 
-// ---------------------------------------------------------------------------
-// Photo uploads
-// ---------------------------------------------------------------------------
-const uploadDir = path.join(__dirname, 'public', 'uploads');
-fs.mkdirSync(uploadDir, { recursive: true });
+// Legacy disk uploads are retained for existing records but are no longer
+// publicly exposed through express.static.
+app.get('/uploads/:filename', async (req, res, next) => {
+  try {
+    if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+    const access = await platformAccess.getAccountAccess(req.session.userId);
+    if (!access?.email_verified_at || access.account_status !== 'approved') {
+      return res.status(403).json({ error: 'Account access is required' });
+    }
+    const relativeUrl = `/uploads/${path.basename(req.params.filename)}`;
+    const allowed = await db.query(`
+      SELECT 1 FROM persons p
+      JOIN family_memberships fm ON fm.family_id = p.family_id
+      WHERE p.photo_url = $1 AND fm.user_id = $2
+      LIMIT 1
+    `, [relativeUrl, req.session.userId]);
+    if (!allowed.rows.length) return res.status(404).json({ error: 'Media not found' });
+    res.sendFile(path.join(__dirname, 'public', 'uploads', path.basename(req.params.filename)));
+  } catch (error) {
+    next(error);
+  }
+});
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname) || '.jpg';
-    cb(null, `photo_${Date.now()}_${Math.round(Math.random() * 1e6)}${ext}`);
-  }
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: process.env.NODE_ENV === 'test' ? 1000 : 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false
 });
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (/^image\//.test(file.mimetype)) cb(null, true);
-    else cb(new Error('Only image uploads are allowed'));
-  }
-});
+trustAccess.registerRoutes(app, authLimiter);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -94,7 +110,7 @@ app.get('/api/auth/me', async (req, res, next) => {
   }
 });
 
-app.post('/api/auth/signup', async (req, res, next) => {
+app.post('/api/auth/signup', authLimiter, async (req, res, next) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
   const familyName = String(req.body.family_name || '').trim();
@@ -103,13 +119,13 @@ app.post('/api/auth/signup', async (req, res, next) => {
   if (!email || !password || (!familyName && !inviteToken)) {
     return res.status(400).json({ error: 'Email, password, and a family name or invitation are required' });
   }
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (password.length < 12) {
+    return res.status(400).json({ error: 'Password must be at least 12 characters' });
   }
 
   const client = await db.pool.connect();
   try {
-    await Promise.all([familyAccess.ready, platformAccess.ready]);
+    await Promise.all([familyAccess.ready, platformAccess.ready, trustAccess.ready]);
     await client.query('BEGIN');
     const hash = await bcrypt.hash(password, 10);
     const result = await client.query(
@@ -127,10 +143,13 @@ app.post('/api/auth/signup', async (req, res, next) => {
     }
 
     await client.query('COMMIT');
+    const verification = await trustAccess.issueVerification(user, req, client);
     req.session.userId = user.id;
     req.session.activeFamilyId = activeFamily.id;
     const context = await familyAccess.userContext(user.id, activeFamily.id);
-    res.status(201).json(context);
+    const response = { ...context, verification_email_sent: verification.delivered };
+    if (process.env.NODE_ENV === 'test') response.test_verification_token = verification.token;
+    res.status(201).json(response);
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     if (error.code === '23505') return res.status(409).json({ error: 'Email already exists' });
@@ -141,7 +160,7 @@ app.post('/api/auth/signup', async (req, res, next) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res, next) => {
+app.post('/api/auth/login', authLimiter, async (req, res, next) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
   try {
@@ -153,6 +172,7 @@ app.post('/api/auth/login', async (req, res, next) => {
     }
 
     const context = await familyAccess.userContext(user.id, req.session.activeFamilyId);
+    await new Promise((resolve, reject) => req.session.regenerate((error) => error ? reject(error) : resolve()));
     req.session.userId = user.id;
     req.session.activeFamilyId = context.active_family_id;
     res.json(context);
@@ -169,10 +189,6 @@ app.post('/api/auth/logout', (req, res, next) => {
   });
 });
 
-app.post('/api/auth/reset-password', (req, res) => {
-  res.status(501).json({ error: 'Password recovery is unavailable until verified email delivery is configured' });
-});
-
 const requireAuth = familyAccess.requireAuth;
 const requireApproved = platformAccess.requireApproved;
 const requireFamily = familyAccess.requireFamily;
@@ -186,17 +202,43 @@ app.use('/api/families', requireAuth, requireApproved);
 app.use('/api/family', requireAuth, requireApproved);
 familyAccess.registerRoutes(app);
 
+app.get('/api/family/audit', requireAuth, requireApproved, requireFamily, async (req, res, next) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const result = await db.query(`
+      SELECT al.id, al.action, al.entity_type, al.entity_id, al.before_data, al.after_data,
+             al.created_at, u.email AS actor_email
+      FROM audit_logs al
+      LEFT JOIN users u ON u.id = al.actor_user_id
+      WHERE al.family_id = $1
+      ORDER BY al.created_at DESC, al.id DESC
+      LIMIT $2
+    `, [req.family.id, limit]);
+    res.json({ entries: result.rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use('/api/persons', requireAuth, requireApproved, requireFamily);
 app.use('/api/relationships', requireAuth, requireApproved, requireFamily);
 app.use('/api/tree', requireAuth, requireApproved, requireFamily);
 app.use('/api/export', requireAuth, requireApproved, requireFamily);
 app.use('/api/merge', requireAuth, requireApproved, requireFamily);
 app.use('/api/duplicates', requireAuth, requireApproved, requireFamily);
+app.use('/api/media', requireAuth, requireApproved, requireFamily);
 
-app.post('/api/upload', requireAuth, requireApproved, requireFamily, requireRole('contributor'), upload.single('photo'), (req, res) => {
+app.post('/api/upload', requireAuth, requireApproved, requireFamily, requireRole('contributor'), mediaStorage.upload.single('photo'), async (req, res, next) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  res.json({ url: `/uploads/${req.file.filename}` });
+  try {
+    const asset = await mediaStorage.save(req, req.file);
+    await trustAccess.audit(req, 'media.uploaded', 'media_asset', asset.id, null, { mime_type: req.file.mimetype, size: req.file.size });
+    res.json({ url: asset.url, durable: mediaStorage.durable });
+  } catch (error) {
+    next(error);
+  }
 });
+app.get('/api/media/:id', (req, res, next) => mediaStorage.stream(req, res).catch(next));
 // ---------------------------------------------------------------------------
 // Persons CRUD
 // ---------------------------------------------------------------------------
@@ -237,6 +279,7 @@ app.post('/api/persons', requireRole('contributor'), async (req, res) => {
       RETURNING *
     `, [first_name, last_name, maiden_name, gender, birth_date, death_date, birth_place, photo_url, notes, req.session.userId, req.family.id, req.session.userId]);
 
+    await trustAccess.audit(req, 'person.created', 'person', result.rows[0].id, null, result.rows[0]);
     res.status(201).json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -264,6 +307,7 @@ app.put('/api/persons/:id', requireRole('contributor'), async (req, res) => {
       existing.id, req.family.id
     ]);
 
+    await trustAccess.audit(req, 'person.updated', 'person', existing.id, existing, result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -276,6 +320,7 @@ app.delete('/api/persons/:id', requireRole('contributor'), async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Person not found' });
 
     await db.query('DELETE FROM persons WHERE id = $1 AND family_id = $2', [req.params.id, req.family.id]);
+    await trustAccess.audit(req, 'person.deleted', 'person', existing.id, existing, null);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -318,6 +363,7 @@ app.post('/api/relationships', requireRole('contributor'), async (req, res) => {
       RETURNING *
     `, [type, person1_id, person2_id, label, status, start_date, end_date, req.session.userId, req.family.id, req.session.userId]);
 
+    await trustAccess.audit(req, 'relationship.created', 'relationship', result.rows[0].id, null, result.rows[0]);
     res.status(201).json(result.rows[0]);
   } catch (err) {
     if (String(err).includes('unique constraint') || String(err).includes('UNIQUE')) {
@@ -329,7 +375,8 @@ app.post('/api/relationships', requireRole('contributor'), async (req, res) => {
 
 app.delete('/api/relationships/:id', requireRole('contributor'), async (req, res) => {
   try {
-    await db.query('DELETE FROM relationships WHERE id = $1 AND family_id = $2', [req.params.id, req.family.id]);
+    const deleted = await db.query('DELETE FROM relationships WHERE id = $1 AND family_id = $2 RETURNING *', [req.params.id, req.family.id]);
+    if (deleted.rows[0]) await trustAccess.audit(req, 'relationship.deleted', 'relationship', req.params.id, deleted.rows[0], null);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -419,6 +466,7 @@ app.post('/api/merge', requireRole('contributor'), async (req, res) => {
     `, [mergeIds, req.family.id]);
 
     await client.query('COMMIT');
+    await trustAccess.audit(req, 'persons.merged', 'person', keepId, { merge_ids: mergeIds }, { kept_id: keepId });
     res.json({ success: true });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -453,6 +501,7 @@ app.put('/api/tree', requireRole('admin'), async (req, res) => {
       'UPDATE families SET name = $1, updated_at = now() WHERE id = $2 RETURNING id, name',
       [name, req.family.id]
     );
+    await trustAccess.audit(req, 'family.renamed', 'family', req.family.id, { name: req.family.name }, result.rows[0]);
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -723,7 +772,7 @@ app.use((err, req, res, next) => {
 });
 
 if (require.main === module) {
-  Promise.all([db.ready, familyAccess.ready, platformAccess.ready])
+  Promise.all([db.ready, familyAccess.ready, platformAccess.ready, trustAccess.ready, mediaStorage.ready])
     .then(() => {
       app.listen(PORT, () => {
         console.log('Family tree server running at http://localhost:' + PORT);

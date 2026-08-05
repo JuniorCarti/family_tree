@@ -42,6 +42,8 @@ async function initializePlatformAccess() {
     await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP');
     await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
     await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS rejection_reason TEXT');
+    await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMP DEFAULT now()');
+    await client.query('ALTER TABLE users ALTER COLUMN email_verified_at DROP DEFAULT');
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS account_payment_submissions (
@@ -70,6 +72,7 @@ async function initializePlatformAccess() {
         UPDATE users
         SET is_superadmin = true,
             account_status = 'approved',
+            email_verified_at = COALESCE(email_verified_at, now()),
             approved_at = COALESCE(approved_at, now()),
             rejection_reason = NULL
         WHERE lower(email) = ANY($1::text[])
@@ -98,6 +101,7 @@ async function applyBootstrapAccess(userId, email, client = db) {
     UPDATE users
     SET is_superadmin = true,
         account_status = 'approved',
+        email_verified_at = COALESCE(email_verified_at, now()),
         approved_at = COALESCE(approved_at, now()),
         rejection_reason = NULL
     WHERE id = $1
@@ -108,7 +112,7 @@ async function applyBootstrapAccess(userId, email, client = db) {
 async function getAccountAccess(userId, client = db) {
   await ready;
   const result = await client.query(`
-    SELECT u.id, u.email, u.account_status, u.is_superadmin, u.approved_at,
+    SELECT u.id, u.email, u.account_status, u.is_superadmin, u.approved_at, u.email_verified_at,
            u.rejection_reason,
            payment.id AS payment_id,
            payment.amount_kes,
@@ -146,6 +150,12 @@ async function requireApproved(req, res, next) {
   try {
     const access = await getAccountAccess(req.session.userId);
     if (!access) return res.status(401).json({ error: 'Account not found' });
+    if (!access.email_verified_at) {
+      return res.status(403).json({
+        error: 'Verify your email address before accessing family records',
+        code: 'EMAIL_UNVERIFIED'
+      });
+    }
     if (access.account_status !== 'approved') {
       return res.status(403).json({
         error: 'Account approval and payment verification are required',
