@@ -30,7 +30,7 @@ Lineage never requests an M-Pesa PIN. Users should not share their PIN, full M-P
 
 ## Pre-approval product guide and help centre
 
-The locked-account screen is also the product's pre-purchase help centre. It explains what Lineage does before asking a person to submit payment proof.
+The locked-account screen is also the product's pre-purchase help centre. The same guide is available publicly from both sign-in and sign-up, so a person can understand Lineage before creating an account or submitting payment proof.
 
 The screen contains:
 
@@ -45,6 +45,8 @@ The screen contains:
 
 Payment and approval status remain the primary action. On narrow screens the payment card appears before the locked product preview and educational content.
 
+The authentication card includes a compact “New to Lineage?” explanation plus separate How Lineage works and Browse FAQs actions. These actions open the existing guide in public-help mode rather than duplicating FAQ content. Public-help mode hides account-specific payment controls, labels the screen as a product guide, and replaces Log out with Back to sign in. Returning restores the authentication form and preserves invitation or other query parameters.
+
 The approval screen is an independent, full-height scroll container because the authenticated tree workspace intentionally disables document scrolling. Anchor links include a sticky-header offset, and reduced-motion preferences disable smooth scrolling.
 
 ### FAQ content rules
@@ -58,6 +60,7 @@ When changing the FAQ:
 5. Never ask users to send an M-Pesa PIN, password, full confirmation message, bank credential, or email verification code.
 6. Test search terms that appear only in answers as well as terms appearing in question titles.
 7. Verify the locked screen at 320px, 390px, tablet, and desktop widths after content changes.
+8. Verify both sign-in and sign-up can open the shared guide and return without changing authentication mode or losing invitation parameters.
 
 ## Superadmin bootstrap
 

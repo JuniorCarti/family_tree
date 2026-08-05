@@ -13,7 +13,7 @@ Lineage is a full-stack family tree application for building shared, multi-gener
 - Individual email accounts with PostgreSQL-backed sessions
 - Verified email addresses and expiring, single-use password recovery links
 - KES 500 manual M-Pesa unlock with platform-superadmin approval for new signups
-- Pre-approval product guide with payment safety, feature previews, searchable FAQs, and support guidance
+- Sign-in and pre-approval product guide with payment safety, feature previews, searchable FAQs, and support guidance
 - Shared family trees with invitation links and role-based access
 - Viewer, contributor, administrator, and owner permissions
 - Multiple family trees per account with an active-tree selector

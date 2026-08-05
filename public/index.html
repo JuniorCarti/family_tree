@@ -11,7 +11,7 @@
     href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
     rel="stylesheet">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/style.css?v=approval-help-v1" />
+  <link rel="stylesheet" href="/style.css?v=auth-help-v1" />
 </head>
 
 <body>
@@ -89,6 +89,18 @@
             up.</a>
         </div>
       </form>
+      <aside class="auth-help-entry" aria-label="Learn about Lineage before signing in">
+        <div>
+          <p class="auth-help-eyebrow">NEW TO LINEAGE?</p>
+          <strong>See what your family can preserve together.</strong>
+          <p>Explore the private tree, timeline, stories, family roles, payment process, and all 34 common questions before creating an account.</p>
+        </div>
+        <div class="auth-help-features" aria-hidden="true"><span>Family tree</span><span>Timeline</span><span>Stories</span></div>
+        <div class="auth-help-actions">
+          <button class="btn btn-ghost auth-public-help-btn" type="button" data-public-help-target="approvalGuide">How Lineage works</button>
+          <button class="auth-help-link auth-public-help-btn" type="button" data-public-help-target="approvalFaq">Browse FAQs</button>
+        </div>
+      </aside>
     </section>
   </div>
 
@@ -132,7 +144,7 @@
             <path d="M20 9 L22.5 16.5 L30 16.5 L23.7 21 L26 28.5 L20 24 L14 28.5 L16.3 21 L10 16.5 L17.5 16.5 Z" fill="currentColor" />
           </svg>
         </span>
-        <div><strong>Lineage</strong><span>Account approval</span></div>
+        <div><strong>Lineage</strong><span id="approvalBrandContext">Account approval</span></div>
       </div>
       <div class="approval-top-actions">
         <a href="#approvalGuide">How it works</a>
@@ -827,7 +839,7 @@
     </div>
   </div>
 
-  <script src="/app.js?v=approval-help-v1"></script>
+  <script src="/app.js?v=auth-help-v1"></script>
   <script src="/archive.js?v=release3"></script>
 </body>
 

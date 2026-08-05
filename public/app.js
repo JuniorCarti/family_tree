@@ -1151,6 +1151,7 @@ async function refreshUserContext() {
 
 function showAuthenticatedApp(context) {
   applyUserContext(context);
+  resetApprovalScreenMode();
   $('#authScreen').classList.add('hidden');
   $('#app').classList.add('hidden');
   $('#approvalScreen').classList.add('hidden');
@@ -1163,6 +1164,33 @@ function showAuthenticatedApp(context) {
   $('#approvalScreen').classList.remove('hidden');
   loadApprovalAccess().catch((error) => showApprovalMessage(error.message));
   return false;
+}
+
+function resetApprovalScreenMode() {
+  $('#approvalScreen').classList.remove('public-help-mode');
+  $('#approvalBrandContext').textContent = 'Account approval';
+  $('#approvalLogoutBtn').textContent = 'Log out';
+}
+
+function openPublicHelp(targetId) {
+  $('#app').classList.add('hidden');
+  $('#authScreen').classList.add('hidden');
+  $('#approvalScreen').classList.add('public-help-mode');
+  $('#approvalScreen').classList.remove('hidden');
+  $('#approvalBrandContext').textContent = 'Product guide';
+  $('#approvalLogoutBtn').textContent = 'Back to sign in';
+  $('#approvalScreen').scrollTop = 0;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.getElementById(targetId)?.scrollIntoView({ block: 'start' });
+  }));
+}
+
+function closePublicHelp() {
+  resetApprovalScreenMode();
+  $('#approvalScreen').classList.add('hidden');
+  $('#approvalScreen').scrollTop = 0;
+  $('#authScreen').classList.remove('hidden');
+  window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
 }
 
 function showApprovalMessage(message, type = 'error') {
@@ -1488,8 +1516,16 @@ $('#resendVerificationBtn').addEventListener('click', async () => {
 });
 
 $('#approvalLogoutBtn').addEventListener('click', async () => {
+  if ($('#approvalScreen').classList.contains('public-help-mode')) {
+    closePublicHelp();
+    return;
+  }
   await api('/auth/logout', { method: 'POST' }).catch(() => {});
   window.location.reload();
+});
+
+$$('.auth-public-help-btn').forEach((button) => {
+  button.addEventListener('click', () => openPublicHelp(button.dataset.publicHelpTarget));
 });
 
 let approvalFaqCategory = 'all';
