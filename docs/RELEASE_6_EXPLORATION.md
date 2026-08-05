@@ -136,6 +136,24 @@ The suite verifies a 5,000-person layout, graph projections, fan slots, shortest
 
 Real Chrome QA covers every exploration tab, populated alternate views, the private-link modal, public presentation, 1440px desktop and 390px mobile, the mobile fit control, minimap, list search, page-level overflow, and browser runtime exceptions.
 
+## Production rollout
+
+The complete exploration system was deployed on 2026-08-06.
+
+- Implementation commit: **4a7b21b**
+- Cloud Run revision: **lineage-api-00015-n9d**
+- Cloud Run traffic: 100 percent on the new revision
+- Firebase project: **family-tree-a4c4f**
+- Live application: https://family-tree-a4c4f.web.app
+
+Cloud Run startup confirmed the PostgreSQL schema and relationship constraints, then passed its startup probe. Production smoke checks confirmed:
+
+- the hosted shell and versioned exploration assets return HTTP 200;
+- the shell references the exploration controller and matching stylesheet;
+- Firebase's API rewrite returns an anonymous session response without a 401;
+- the public presentation endpoint is reachable and returns 404 for an invalid token;
+- the new revision remains healthy after migration.
+
 ## Files
 
 | File | Responsibility |
