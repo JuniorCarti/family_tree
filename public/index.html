@@ -11,10 +11,34 @@
     href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
     rel="stylesheet">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/style.css?v=release6" />
+  <link rel="stylesheet" href="/style.css?v=exploration1" />
 </head>
 
 <body>
+  <div id="sharedTreeScreen" class="shared-tree-screen hidden">
+    <header class="shared-tree-header">
+      <a class="shared-tree-brand" href="/" aria-label="Open Lineage">
+        <span class="seal">L</span>
+        <span><strong>Lineage</strong><small>Private family presentation</small></span>
+      </a>
+      <div class="shared-tree-meta">
+        <span id="sharedTreeExpiry"></span>
+        <a class="btn btn-ghost" href="/">Create your family archive</a>
+      </div>
+    </header>
+    <main class="shared-tree-main">
+      <div class="shared-tree-heading">
+        <div><p class="archive-kicker">SHARED WITH YOU</p><h1 id="sharedTreeTitle">Family tree</h1></div>
+        <div class="shared-tree-actions">
+          <button class="btn btn-ghost" type="button" id="sharedTreeFitBtn">Fit chart</button>
+          <button class="btn btn-ghost" type="button" id="sharedTreeFullscreenBtn">Present</button>
+        </div>
+      </div>
+      <div id="sharedTreeNotice" class="shared-tree-notice"></div>
+      <section id="sharedTreeCanvas" class="shared-tree-canvas" aria-label="Shared family chart"></section>
+    </main>
+  </div>
+
   <div id="authScreen" class="auth-wrapper hidden">
     <div class="auth-scene" aria-hidden="true">
       <div class="auth-connection auth-connection-one"></div>
@@ -410,6 +434,45 @@
       <div class="workspace-nav-note"><span></span>Private family archive</div>
     </nav>
 
+    <section class="explorer-command-bar" id="explorerCommandBar" aria-label="Tree exploration controls">
+      <div class="explorer-view-switcher" role="tablist" aria-label="Tree layout">
+        <button class="explorer-view-button active" type="button" data-explorer-view="family" role="tab" aria-selected="true"><span>⌘</span>Family</button>
+        <button class="explorer-view-button" type="button" data-explorer-view="pedigree" role="tab" aria-selected="false"><span>△</span>Pedigree</button>
+        <button class="explorer-view-button" type="button" data-explorer-view="descendants" role="tab" aria-selected="false"><span>▽</span>Descendants</button>
+        <button class="explorer-view-button" type="button" data-explorer-view="fan" role="tab" aria-selected="false"><span>◒</span>Fan</button>
+        <button class="explorer-view-button" type="button" data-explorer-view="hourglass" role="tab" aria-selected="false"><span>◇</span>Hourglass</button>
+        <button class="explorer-view-button" type="button" data-explorer-view="list" role="tab" aria-selected="false"><span>≡</span>List</button>
+        <button class="explorer-view-button" type="button" data-explorer-view="path" role="tab" aria-selected="false"><span>↝</span>Path</button>
+        <button class="explorer-view-button" type="button" data-explorer-view="map" role="tab" aria-selected="false"><span>⌖</span>Places</button>
+      </div>
+      <div class="explorer-context-controls">
+        <label class="explorer-select-wrap"><span>Focus</span><select id="explorerFocusPerson" aria-label="Focus person"></select></label>
+        <label class="explorer-select-wrap explorer-depth-wrap"><span>Depth</span><select id="explorerDepth" aria-label="Generation depth">
+          <option value="1">1 generation</option><option value="2">2 generations</option>
+          <option value="3">3 generations</option><option value="4" selected>4 generations</option>
+          <option value="5">5 generations</option><option value="6">6 generations</option>
+          <option value="7">7 generations</option><option value="8">8 generations</option>
+          <option value="all">All generations</option>
+        </select></label>
+        <button class="explorer-icon-button" type="button" id="explorerFocusBranchBtn" title="Show only the selected person's nearby branch" aria-pressed="false">Focus branch</button>
+        <button class="explorer-icon-button" type="button" id="explorerCollapseBtn" title="Collapse or expand the selected person's descendants">Collapse branch</button>
+        <button class="explorer-icon-button hidden" type="button" id="explorerResetBranchesBtn">Expand all</button>
+      </div>
+      <div class="explorer-output-controls">
+        <span class="explorer-result-count" id="explorerResultCount">0 people</span>
+        <div class="explorer-menu-wrap">
+          <button class="explorer-icon-button" type="button" id="explorerExportMenuBtn" aria-expanded="false">Export ▾</button>
+          <div class="explorer-menu hidden" id="explorerExportMenu">
+            <button type="button" data-export-action="png">High-resolution PNG</button>
+            <button type="button" data-export-action="pdf">Print-ready PDF</button>
+            <button type="button" data-export-action="print">Print chart</button>
+          </div>
+        </div>
+        <button class="explorer-icon-button" type="button" id="explorerShareBtn">Private link</button>
+        <button class="explorer-icon-button explorer-present-button" type="button" id="explorerPresentBtn">Present</button>
+      </div>
+    </section>
+
     <!-- ============ Canvas ============ -->
     <main class="canvas-wrap" id="canvasWrap">
       <div id="emptyState" class="empty-state hidden">
@@ -422,6 +485,11 @@
         </div>
       </div>
       <svg id="treeSvg" width="100%" height="100%"></svg>
+      <section id="explorerAltView" class="explorer-alt-view hidden" aria-live="polite"></section>
+      <aside id="treeMinimap" class="tree-minimap" aria-label="Tree overview map">
+        <div class="tree-minimap-heading"><span>Overview</span><small id="treeMinimapCount"></small></div>
+        <svg id="treeMinimapSvg" viewBox="0 0 180 112" preserveAspectRatio="xMidYMid meet"></svg>
+      </aside>
       <div class="tree-viewport-tools" aria-label="Tree view controls">
         <button type="button" id="treeZoomOutBtn" aria-label="Zoom out" title="Zoom out">−</button>
         <output id="treeZoomLabel" aria-live="polite">100%</output>
@@ -747,7 +815,7 @@
           <div class="field-row span-2"><label>Person *</label><select id="eventPerson" required></select></div>
           <div class="field-row"><label>Event type *</label><select id="eventType" required>
             <option value="birth">Birth</option><option value="education">Education</option>
-            <option value="marriage">Marriage</option><option value="work">Work</option>
+            <option value="marriage">Marriage</option><option value="residence">Residence</option><option value="work">Work</option>
             <option value="migration">Migration</option><option value="milestone" selected>Milestone</option>
             <option value="death">Death</option><option value="other">Other</option>
           </select></div>
@@ -759,6 +827,8 @@
           <div class="field-row"><label>Start date or year</label><input id="eventDate" maxlength="50" placeholder="1968 or 1968-04-12" /></div>
           <div class="field-row"><label>End date (optional)</label><input id="eventEndDate" maxlength="50" placeholder="1972" /></div>
           <div class="field-row span-2"><label>Place</label><input id="eventPlace" maxlength="255" placeholder="Village, town, or country" /></div>
+          <div class="field-row"><label>Latitude for map</label><input id="eventLatitude" type="number" min="-90" max="90" step="any" placeholder="-1.2864" /></div>
+          <div class="field-row"><label>Longitude for map</label><input id="eventLongitude" type="number" min="-180" max="180" step="any" placeholder="36.8172" /></div>
           <div class="field-row span-2"><label>What happened?</label><textarea id="eventDescription" rows="5" maxlength="10000" placeholder="Add the details future generations should know."></textarea></div>
           <div class="field-row"><label>Source title</label><input id="eventSourceTitle" maxlength="255" placeholder="Certificate, interview, archive..." /></div>
           <div class="field-row"><label>Source link</label><input id="eventSourceUrl" type="url" placeholder="https://..." /></div>
@@ -855,9 +925,48 @@
     </div>
   </div>
 
-  <script src="/tree-layout.js?v=release6"></script>
-  <script src="/app.js?v=release6"></script>
-  <script src="/archive.js?v=release3"></script>
+  <!-- ============ Private Tree Link Modal ============ -->
+  <div class="modal-overlay hidden" id="shareTreeModalOverlay">
+    <div class="modal share-tree-modal">
+      <div class="modal-header">
+        <div><p class="archive-kicker">CONTROLLED SHARING</p><h3>Private presentation link</h3></div>
+        <button class="modal-close" id="shareTreeModalClose" type="button">&times;</button>
+      </div>
+      <div class="share-tree-intro">
+        <span class="share-tree-shield">◇</span>
+        <div><strong>Share a view, not an account.</strong><p>The link is read-only, expires automatically, and can be revoked at any time.</p></div>
+      </div>
+      <form id="shareTreeForm">
+        <div class="field-grid">
+          <div class="field-row span-2"><label>Link label</label><input id="shareTreeLabel" maxlength="120" placeholder="e.g. Reunion presentation" /></div>
+          <div class="field-row"><label>View</label><select id="shareTreeView">
+            <option value="family">Family</option><option value="pedigree">Pedigree</option>
+            <option value="descendants">Descendants</option><option value="fan">Fan chart</option>
+            <option value="hourglass">Hourglass</option><option value="list">Compact list</option>
+          </select></div>
+          <div class="field-row"><label>Expires</label><select id="shareTreeExpiry">
+            <option value="24">In 24 hours</option><option value="168" selected>In 7 days</option><option value="720">In 30 days</option>
+          </select></div>
+          <div class="field-row span-2"><label class="share-living-toggle"><input id="shareTreeIncludeLiving" type="checkbox" /><span><strong>Include living relatives</strong><small>Living people remain limited to name and birth year. Leave off for the safest link.</small></span></label></div>
+        </div>
+        <div id="shareTreeMessage" class="hidden family-message"></div>
+        <div class="modal-footer"><div></div><button class="btn btn-primary" type="submit">Create private link</button></div>
+      </form>
+      <section class="share-created-panel hidden" id="shareCreatedPanel">
+        <label>Copy this link now—it is shown only once.</label>
+        <div class="share-copy-row"><input id="shareCreatedUrl" readonly /><button class="btn btn-primary" id="shareCopyBtn" type="button">Copy</button></div>
+      </section>
+      <section class="share-links-section">
+        <div class="share-links-heading"><h4>Active and recent links</h4><button class="btn btn-ghost" id="refreshShareLinksBtn" type="button">Refresh</button></div>
+        <div id="shareLinksList"><p class="muted-text">Open this panel to load links.</p></div>
+      </section>
+    </div>
+  </div>
+
+  <script src="/tree-layout.js?v=exploration1"></script>
+  <script src="/explorer.js?v=exploration1"></script>
+  <script src="/app.js?v=exploration1"></script>
+  <script src="/archive.js?v=exploration1"></script>
 </body>
 
 </html>
