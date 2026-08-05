@@ -13,6 +13,7 @@ Lineage is a full-stack family tree application for building shared, multi-gener
 - Individual email accounts with PostgreSQL-backed sessions
 - Verified email addresses and expiring, single-use password recovery links
 - KES 500 manual M-Pesa unlock with platform-superadmin approval for new signups
+- Sign-in and pre-approval product guide with payment safety, feature previews, searchable FAQs, and support guidance
 - Shared family trees with invitation links and role-based access
 - Viewer, contributor, administrator, and owner permissions
 - Multiple family trees per account with an active-tree selector
@@ -21,9 +22,11 @@ Lineage is a full-stack family tree application for building shared, multi-gener
 - Person editing, private Cloud Storage media, audit history, duplicate detection, merging, and Excel export
 - Living-person protection, per-profile visibility, safe private placeholders, and privacy-aware exports
 - Recycle-bin restore plus personal account-data export and confirmed account deletion
+- Privacy-aware life-event timelines, source citations, family stories, tagged relatives, and comments
+- Family archive JSON export filtered to the requesting member's permissions
 - Automatic migration of existing account-owned trees into shared families
 
-See [Family Access and Sharing](docs/FAMILY_ACCESS.md) for family roles and invitations. See [Account Unlock and Superadmin Approval](docs/ACCOUNT_APPROVAL.md) for the KES 500 M-Pesa workflow. See [Release 1: Trust Foundation](docs/RELEASE_1_TRUST.md) and [Release 2: Privacy and Data Control](docs/RELEASE_2_PRIVACY.md) for release behavior and rollout details.
+See [Family Access and Sharing](docs/FAMILY_ACCESS.md) for family roles and invitations. See [Account Unlock and Superadmin Approval](docs/ACCOUNT_APPROVAL.md) for the KES 500 M-Pesa workflow. Release details are documented in [Release 1: Trust Foundation](docs/RELEASE_1_TRUST.md), [Release 2: Privacy and Data Control](docs/RELEASE_2_PRIVACY.md), and [Release 3: Family Archive and Storytelling](docs/RELEASE_3_ARCHIVE.md).
 
 ## Technology
 
@@ -108,6 +111,7 @@ Firebase preserves the `__session` cookie for rewritten `/api/**` requests. Expr
 | `/api/duplicates`, `/api/merge` | Duplicate review and contributor merge |
 | `/api/export` | Active-family Excel export |
 | `/api/recycle-bin` | Administrator restore and owner permanent deletion |
+| `/api/archive` | Privacy-aware timeline events, stories, comments, overview, and JSON export |
 
 Detailed family endpoints and permissions are in [docs/FAMILY_ACCESS.md](docs/FAMILY_ACCESS.md).
 
@@ -130,6 +134,7 @@ npm test
 - [Account unlock and superadmin approval](docs/ACCOUNT_APPROVAL.md)
 - [Trust foundation release and rollout](docs/RELEASE_1_TRUST.md)
 - [Privacy and data control release](docs/RELEASE_2_PRIVACY.md)
+- [Family archive and storytelling release](docs/RELEASE_3_ARCHIVE.md)
 
 Use a feature branch and pull request rather than committing directly to `main`.
 
@@ -138,3 +143,4 @@ Use a feature branch and pull request rather than committing directly to `main`.
 - MFA, passkeys, automated backups, and automated recycle-bin expiry are not implemented yet.
 - SMTP and the private media bucket must remain configured in each deployed environment.
 - The Express API remains mostly monolithic; route/service separation would improve maintainability as it grows.
+- Archive citations are links in Release 3; document attachments, audio interviews, GEDCOM import, and print-book generation are not implemented yet.

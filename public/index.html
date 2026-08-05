@@ -11,7 +11,7 @@
     href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
     rel="stylesheet">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/style.css?v=85c6b06" />
+  <link rel="stylesheet" href="/style.css?v=auth-help-v1" />
 </head>
 
 <body>
@@ -89,6 +89,18 @@
             up.</a>
         </div>
       </form>
+      <aside class="auth-help-entry" aria-label="Learn about Lineage before signing in">
+        <div>
+          <p class="auth-help-eyebrow">NEW TO LINEAGE?</p>
+          <strong>See what your family can preserve together.</strong>
+          <p>Explore the private tree, timeline, stories, family roles, payment process, and all 34 common questions before creating an account.</p>
+        </div>
+        <div class="auth-help-features" aria-hidden="true"><span>Family tree</span><span>Timeline</span><span>Stories</span></div>
+        <div class="auth-help-actions">
+          <button class="btn btn-ghost auth-public-help-btn" type="button" data-public-help-target="approvalGuide">How Lineage works</button>
+          <button class="auth-help-link auth-public-help-btn" type="button" data-public-help-target="approvalFaq">Browse FAQs</button>
+        </div>
+      </aside>
     </section>
   </div>
 
@@ -132,9 +144,13 @@
             <path d="M20 9 L22.5 16.5 L30 16.5 L23.7 21 L26 28.5 L20 24 L14 28.5 L16.3 21 L10 16.5 L17.5 16.5 Z" fill="currentColor" />
           </svg>
         </span>
-        <div><strong>Lineage</strong><span>Account approval</span></div>
+        <div><strong>Lineage</strong><span id="approvalBrandContext">Account approval</span></div>
       </div>
-      <button class="btn btn-ghost" id="approvalLogoutBtn" type="button">Log out</button>
+      <div class="approval-top-actions">
+        <a href="#approvalGuide">How it works</a>
+        <a href="#approvalFaq">FAQs</a>
+        <button class="btn btn-ghost" id="approvalLogoutBtn" type="button">Log out</button>
+      </div>
     </header>
 
     <main class="approval-layout">
@@ -201,6 +217,139 @@
         </div>
       </section>
     </main>
+
+    <section class="approval-guide-shell" id="approvalGuide" aria-labelledby="approvalGuideTitle">
+      <div class="approval-guide-intro">
+        <div>
+          <p class="eyebrow">KNOW WHAT YOU ARE UNLOCKING</p>
+          <h2 id="approvalGuideTitle">Your family history, organised for the people it belongs to.</h2>
+        </div>
+        <p>Lineage is a private, collaborative home for family relationships, photographs, important moments, and stories. Each relative uses their own account—nobody should ever share the tree owner's password.</p>
+      </div>
+
+      <div class="approval-trust-row" aria-label="Key facts about Lineage">
+        <article><span>01</span><div><strong>One-time unlock</strong><p>KES 500 unlocks this account after manual M-Pesa verification.</p></div></article>
+        <article><span>02</span><div><strong>Private by default</strong><p>Your family archive is not a public people-search directory.</p></div></article>
+        <article><span>03</span><div><strong>Individual accounts</strong><p>Invite relatives with viewer, contributor, admin, or owner access.</p></div></article>
+      </div>
+
+      <div class="approval-how-grid">
+        <div class="approval-section-heading">
+          <p class="eyebrow">HOW LINEAGE WORKS</p>
+          <h3>From your first relative to a shared family archive.</h3>
+          <p>Start small. The record becomes richer as trusted relatives add what they know.</p>
+        </div>
+        <ol class="approval-journey">
+          <li><span>1</span><div><strong>Unlock your account</strong><p>Verify your email, pay with M-Pesa Send Money, and submit the transaction code.</p></div></li>
+          <li><span>2</span><div><strong>Build your tree</strong><p>Add relatives and connect parents, children, spouses, siblings, and extended family.</p></div></li>
+          <li><span>3</span><div><strong>Invite your family</strong><p>Every relative receives a separate account with the right level of access.</p></div></li>
+          <li><span>4</span><div><strong>Preserve the story</strong><p>Add life events, sources, photographs, memories, and comments across generations.</p></div></li>
+        </ol>
+      </div>
+
+      <div class="approval-capabilities">
+        <div class="approval-section-heading approval-section-heading-wide">
+          <p class="eyebrow">INSIDE YOUR ARCHIVE</p>
+          <h3>More than names on a family tree.</h3>
+        </div>
+        <div class="approval-capability-grid">
+          <article><span class="capability-mark">TREE</span><h4>Interactive family tree</h4><p>Search, pan, zoom, and connect multiple generations with clear relationship types.</p></article>
+          <article><span class="capability-mark">TIME</span><h4>Life-event timeline</h4><p>Record births, education, marriage, work, migration, milestones, and source links.</p></article>
+          <article><span class="capability-mark">STORY</span><h4>Family journal</h4><p>Write long-form memories, tag relatives, and leave family notes for future generations.</p></article>
+          <article><span class="capability-mark">ACCESS</span><h4>Controlled collaboration</h4><p>Give each person viewer, contributor, administrator, or owner permissions.</p></article>
+          <article><span class="capability-mark">SAFE</span><h4>Living-person privacy</h4><p>Protect sensitive profiles and prevent hidden details from leaking through exports.</p></article>
+          <article><span class="capability-mark">KEEP</span><h4>Exports and recovery</h4><p>Download permitted records, restore recently deleted people, and export your account data.</p></article>
+        </div>
+      </div>
+
+      <div class="approval-role-guide">
+        <div class="approval-section-heading">
+          <p class="eyebrow">FAMILY ACCESS</p>
+          <h3>Everyone gets the access they need.</h3>
+          <p>Accounts are personal. Permissions belong to a family and can be changed by its administrators.</p>
+        </div>
+        <div class="approval-role-list">
+          <article><strong>Viewer</strong><p>Read the family records they are permitted to see and join story discussions.</p></article>
+          <article><strong>Contributor</strong><p>Add people, relationships, events, and stories; manage their own contributions.</p></article>
+          <article><strong>Administrator</strong><p>Manage members, invitations, shared content, privacy operations, and restoration.</p></article>
+          <article><strong>Owner</strong><p>Full family administration, including ownership transfer and permanent deletion controls.</p></article>
+        </div>
+      </div>
+
+      <aside class="approval-safety-banner">
+        <div class="safety-shield" aria-hidden="true">✓</div>
+        <div><p class="eyebrow">PAYMENT &amp; ACCOUNT SAFETY</p><h3>Your secret credentials stay secret.</h3><p>Lineage will never ask for your M-Pesa PIN, email password, account password, bank password, or verification code. Use only the payment number shown on this page and keep your M-Pesa confirmation for reference.</p></div>
+        <a class="btn btn-ghost" href="#approvalFaq" data-faq-category-link="payment">Read payment FAQs</a>
+      </aside>
+    </section>
+
+    <section class="approval-faq-section" id="approvalFaq" aria-labelledby="approvalFaqTitle">
+      <div class="approval-faq-header">
+        <div><p class="eyebrow">HELP BEFORE YOU BEGIN</p><h2 id="approvalFaqTitle">Frequently asked questions</h2><p>Clear answers about payment, privacy, family access, records, and troubleshooting.</p></div>
+        <label class="approval-faq-search"><span>Search questions</span><input id="approvalFaqSearch" type="search" placeholder="Try “payment”, “invite”, or “privacy”" autocomplete="off" /></label>
+      </div>
+
+      <div class="approval-faq-filters" role="toolbar" aria-label="Filter frequently asked questions">
+        <button class="active" type="button" data-faq-category="all" aria-pressed="true">All</button>
+        <button type="button" data-faq-category="getting-started" aria-pressed="false">Getting started</button>
+        <button type="button" data-faq-category="payment" aria-pressed="false">Payment</button>
+        <button type="button" data-faq-category="family" aria-pressed="false">Family access</button>
+        <button type="button" data-faq-category="privacy" aria-pressed="false">Privacy</button>
+        <button type="button" data-faq-category="features" aria-pressed="false">Features</button>
+        <button type="button" data-faq-category="account" aria-pressed="false">Account help</button>
+      </div>
+
+      <p class="approval-faq-result" id="approvalFaqResult" aria-live="polite">Showing all questions</p>
+      <div class="approval-faq-list" id="approvalFaqList">
+        <details class="approval-faq-item" data-category="getting-started"><summary><span>What is Lineage?</span><i></i></summary><div><p>Lineage is a private family-tree and storytelling application. It helps a family record relatives, relationships, important life events, photographs, sources, and memories in one shared archive.</p></div></details>
+        <details class="approval-faq-item" data-category="getting-started"><summary><span>Who is Lineage for?</span><i></i></summary><div><p>It is for individuals, households, clans, and extended families who want an organised record they can build together. You can begin with only a few known relatives and expand over time.</p></div></details>
+        <details class="approval-faq-item" data-category="getting-started"><summary><span>What happens after my account is approved?</span><i></i></summary><div><p>The dashboard unlocks when you sign in or refresh your approval status. You can build your first tree, add relatives, invite family members, create timeline events, and preserve stories.</p></div></details>
+        <details class="approval-faq-item" data-category="getting-started"><summary><span>Does every person in the tree need an account?</span><i></i></summary><div><p>No. A profile represents a relative in the family record; an account is only needed when someone wants to sign in and participate. Never create shared login credentials for a group.</p></div></details>
+
+        <details class="approval-faq-item" data-category="payment"><summary><span>Why is KES 500 required?</span><i></i></summary><div><p>The one-time unlock discourages automated or disposable signups and supports operation of the private family archive. Payment is manually matched to the submitted M-Pesa transaction code before access is approved.</p></div></details>
+        <details class="approval-faq-item" data-category="payment"><summary><span>Is KES 500 a subscription?</span><i></i></summary><div><p>No. The current access model is a one-time KES 500 account unlock, not a monthly subscription.</p></div></details>
+        <details class="approval-faq-item" data-category="payment"><summary><span>How do I pay with M-Pesa?</span><i></i></summary><div><p>Choose Send Money in M-Pesa, send exactly KES 500 to <strong>254113245740</strong>, then enter the transaction code in the form above. Do not submit your PIN or the full confirmation message.</p></div></details>
+        <details class="approval-faq-item" data-category="payment"><summary><span>Can I pay from another person's phone?</span><i></i></summary><div><p>Yes. Enter the optional payer phone number with the transaction code so the administrator can match the payment. The Lineage account remains attached to your own email address.</p></div></details>
+        <details class="approval-faq-item" data-category="payment"><summary><span>How long does approval take?</span><i></i></summary><div><p>Approval is manual, so timing depends on administrator availability and whether the submitted details match the M-Pesa payment. Use “Check approval status” above; you do not need to pay again while a valid submission is pending.</p></div></details>
+        <details class="approval-faq-item" data-category="payment"><summary><span>What if my payment submission is rejected?</span><i></i></summary><div><p>The rejection reason appears on this screen. Check the transaction code and payer number, then submit the corrected details. A rejection does not require another payment when the original payment was valid.</p></div></details>
+        <details class="approval-faq-item" data-category="payment"><summary><span>Will Lineage ever ask for my M-Pesa PIN?</span><i></i></summary><div><p>No. Lineage does not need your M-Pesa PIN, email password, banking password, or one-time verification codes. Anyone requesting them is not following the official process.</p></div></details>
+
+        <details class="approval-faq-item" data-category="family"><summary><span>Do relatives need the tree creator's login details?</span><i></i></summary><div><p>No. Every participating relative should use their own account and join through an invitation. Sharing the creator's password removes accountability and puts private family records at risk.</p></div></details>
+        <details class="approval-faq-item" data-category="family"><summary><span>How do I invite relatives?</span><i></i></summary><div><p>An owner or administrator creates an invitation for the relative's email address and selects a role. The relative signs in or creates an account through that invitation.</p></div></details>
+        <details class="approval-faq-item" data-category="family"><summary><span>What can viewers, contributors, admins, and owners do?</span><i></i></summary><div><p>Viewers read permitted records. Contributors can add family content. Administrators manage access and shared records. Owners have full administration and can transfer ownership. Privacy rules still apply at every role.</p></div></details>
+        <details class="approval-faq-item" data-category="family"><summary><span>Can I belong to more than one family?</span><i></i></summary><div><p>Yes. One account can belong to multiple family trees, and you can switch the active family from the dashboard.</p></div></details>
+        <details class="approval-faq-item" data-category="family"><summary><span>What happens if the family owner leaves?</span><i></i></summary><div><p>The owner should transfer ownership to another existing member before deleting their account. Lineage prevents deletion when shared families still require an ownership transfer.</p></div></details>
+        <details class="approval-faq-item" data-category="privacy"><summary><span>Is my family tree public or searchable by strangers?</span><i></i></summary><div><p>No. Family records require an approved account and membership in that family. Lineage is not a public people-search directory.</p></div></details>
+        <details class="approval-faq-item" data-category="privacy"><summary><span>How are living relatives protected?</span><i></i></summary><div><p>Living-person controls can limit profile details for lower-access members. The same restrictions apply to timeline events, stories, direct links, and exports so sensitive information is not revealed indirectly.</p></div></details>
+        <details class="approval-faq-item" data-category="privacy"><summary><span>Can I make a profile private?</span><i></i></summary><div><p>Yes. Profile visibility can be restricted, and private content remains subject to creator and administrator controls. Contributors cannot use a private profile they are not allowed to manage.</p></div></details>
+        <details class="approval-faq-item" data-category="privacy"><summary><span>Are uploaded photographs public?</span><i></i></summary><div><p>No. Current media is stored privately and delivered through authenticated family access. A photograph attached to a protected profile is not exposed as a public file.</p></div></details>
+        <details class="approval-faq-item" data-category="privacy"><summary><span>Does an export include hidden information?</span><i></i></summary><div><p>No. Family-tree and archive exports are filtered using the requesting member's permissions. Information they cannot view in the application should not appear in their export.</p></div></details>
+        <details class="approval-faq-item" data-category="privacy"><summary><span>What should never be stored in Lineage?</span><i></i></summary><div><p>Do not store passwords, M-Pesa PINs, banking details, national-ID images, or unnecessary medical and financial information. Ask permission before adding sensitive details or photographs of living people.</p></div></details>
+
+        <details class="approval-faq-item" data-category="features"><summary><span>Which relationships can I record?</span><i></i></summary><div><p>You can record parents, children, spouses, siblings, grandparents, grandchildren, cousins, aunts or uncles, nieces or nephews, and custom relatives.</p></div></details>
+        <details class="approval-faq-item" data-category="features"><summary><span>What can be added to the family timeline?</span><i></i></summary><div><p>Timeline events include births, education, marriage, work, migration, milestones, deaths, places, approximate dates, descriptions, and optional source links.</p></div></details>
+        <details class="approval-faq-item" data-category="features"><summary><span>What are family stories?</span><i></i></summary><div><p>Stories are long-form memories in the family journal. They can include a date and place, tag relevant relatives, use controlled visibility, and receive comments from permitted family members.</p></div></details>
+        <details class="approval-faq-item" data-category="features"><summary><span>Can mistakes and duplicate people be corrected?</span><i></i></summary><div><p>Permitted contributors can edit records. Duplicate detection helps identify repeated people, while merge controls consolidate records. Deleted people can be restored from the recycle bin before permanent removal.</p></div></details>
+        <details class="approval-faq-item" data-category="features"><summary><span>Can I download my records?</span><i></i></summary><div><p>Yes. Lineage supports an Excel family-tree export, a privacy-filtered JSON family archive, and a personal account-data export. GEDCOM and printed-book generation are not currently available.</p></div></details>
+        <details class="approval-faq-item" data-category="features"><summary><span>Can I use Lineage on my phone?</span><i></i></summary><div><p>Yes. The tree, timeline, stories, account controls, payment screen, and editors are responsive on modern phones, tablets, and desktop browsers.</p></div></details>
+
+        <details class="approval-faq-item" data-category="account"><summary><span>Why must I verify my email before paying?</span><i></i></summary><div><p>Email verification protects account recovery and helps ensure payment approval is attached to a reachable account. Use the resend button above if the original message did not arrive.</p></div></details>
+        <details class="approval-faq-item" data-category="account"><summary><span>What should I do if I see “Unauthorized”?</span><i></i></summary><div><p>Your session may have expired. Sign in again and refresh the page. If login briefly succeeds and then ends, allow cookies for the site and retry without private-browsing restrictions.</p></div></details>
+        <details class="approval-faq-item" data-category="account"><summary><span>How do I reset a forgotten password?</span><i></i></summary><div><p>Use “Forgot your password?” on the sign-in screen. The emailed recovery link is single-use and expires for security; request a new one if necessary.</p></div></details>
+        <details class="approval-faq-item" data-category="account"><summary><span>Can I delete my account?</span><i></i></summary><div><p>Yes, from Privacy &amp; account after approval. Shared-family owners must transfer ownership first. Account deletion requires your password and an explicit confirmation phrase.</p></div></details>
+        <details class="approval-faq-item" data-category="account"><summary><span>Does Lineage replace my own backups?</span><i></i></summary><div><p>No. Keep copies of irreplaceable photographs and source documents. Use the available exports regularly; automated user-managed backup and GEDCOM workflows are not yet available.</p></div></details>
+        <details class="approval-faq-item" data-category="account"><summary><span>Why is my approval screen still showing after payment?</span><i></i></summary><div><p>Payment alone does not unlock the account. Submit the M-Pesa transaction code, wait for manual verification, then use “Check approval status”. Do not submit repeated payments for the same account.</p></div></details>
+      </div>
+      <div class="approval-faq-empty hidden" id="approvalFaqEmpty"><strong>No matching question found.</strong><p>Try a shorter search or choose “All”.</p></div>
+
+      <div class="approval-support-card">
+        <div><p class="eyebrow">STILL NEED HELP?</p><h3>Contact Lineage support</h3><p>Include your account email and, for payment questions, the M-Pesa transaction code. Never send your PIN, password, or full M-Pesa confirmation message.</p></div>
+        <div class="approval-support-actions">
+          <a class="btn btn-primary" href="mailto:ridgejunior369@gmail.com?subject=Lineage%20account%20support">Email support</a>
+          <a class="btn btn-ghost" href="#approvalScreen">Back to payment</a>
+        </div>
+      </div>
+    </section>
   </div>
   <div id="app" class="hidden">
 
@@ -244,6 +393,23 @@
       </div>
     </header>
 
+    <nav class="workspace-nav" aria-label="Family archive views">
+      <div class="workspace-tabs">
+        <button class="workspace-tab active" type="button" data-view="tree" aria-selected="true">
+          <span class="workspace-tab-icon">⌘</span><span>Family tree</span>
+        </button>
+        <button class="workspace-tab" type="button" data-view="timeline" aria-selected="false">
+          <span class="workspace-tab-icon">◷</span><span>Timeline</span>
+          <span class="workspace-count" id="timelineNavCount">0</span>
+        </button>
+        <button class="workspace-tab" type="button" data-view="stories" aria-selected="false">
+          <span class="workspace-tab-icon">¶</span><span>Stories</span>
+          <span class="workspace-count" id="storiesNavCount">0</span>
+        </button>
+      </div>
+      <div class="workspace-nav-note"><span></span>Private family archive</div>
+    </nav>
+
     <!-- ============ Canvas ============ -->
     <main class="canvas-wrap" id="canvasWrap">
       <div id="emptyState" class="empty-state hidden">
@@ -284,6 +450,63 @@
             <line x1="0" y1="2" x2="28" y2="2" stroke="#94a3b8" stroke-width="1.8" stroke-dasharray="4,6" />
           </svg>Other Relative</div>
       </div>
+    </main>
+
+    <!-- ============ Family Timeline ============ -->
+    <main class="archive-view hidden" id="timelineView">
+      <section class="archive-hero timeline-hero">
+        <div class="archive-hero-copy">
+          <p class="archive-kicker">FAMILY CHRONICLE</p>
+          <h1>The moments that shaped <em>your lineage</em></h1>
+          <p>Trace migrations, marriages, milestones, and everyday turning points across generations.</p>
+        </div>
+        <div class="archive-hero-actions">
+          <button class="btn archive-primary-action" id="addEventBtn" type="button">Add a life event</button>
+          <button class="btn archive-secondary-action" id="archiveExportBtn" type="button">Export archive</button>
+        </div>
+        <div class="archive-stats" id="archiveStats">
+          <article><strong id="archiveEventCount">0</strong><span>life events</span></article>
+          <article><strong id="archiveStoryCount">0</strong><span>family stories</span></article>
+          <article><strong id="archiveYearsSpan">0</strong><span>years preserved</span></article>
+        </div>
+      </section>
+      <section class="archive-toolbar">
+        <div class="archive-search"><span>⌕</span><input id="timelineSearch" type="search" placeholder="Search people, places, and moments" /></div>
+        <select id="timelinePersonFilter" aria-label="Filter timeline by person"><option value="">All family members</option></select>
+        <select id="timelineTypeFilter" aria-label="Filter timeline by event type">
+          <option value="">All event types</option>
+          <option value="birth">Birth</option><option value="education">Education</option>
+          <option value="marriage">Marriage</option><option value="work">Work</option>
+          <option value="migration">Migration</option><option value="milestone">Milestone</option>
+          <option value="death">Death</option><option value="other">Other</option>
+        </select>
+      </section>
+      <section class="timeline-shell">
+        <aside class="timeline-index">
+          <p>CHRONICLE INDEX</p>
+          <div id="timelineYearIndex"></div>
+        </aside>
+        <div class="timeline-feed" id="timelineFeed"></div>
+      </section>
+    </main>
+
+    <!-- ============ Family Stories ============ -->
+    <main class="archive-view stories-view hidden" id="storiesView">
+      <section class="stories-masthead">
+        <div>
+          <p class="archive-kicker">THE FAMILY JOURNAL</p>
+          <h1>Stories worth carrying forward.</h1>
+          <p>Memories in the voices of the people who lived them—preserved together, for everyone who comes next.</p>
+        </div>
+        <button class="btn archive-primary-action" id="addStoryBtn" type="button">Write a story</button>
+      </section>
+      <section class="stories-toolbar">
+        <div class="archive-search"><span>⌕</span><input id="storiesSearch" type="search" placeholder="Search the family journal" /></div>
+        <select id="storiesPersonFilter" aria-label="Filter stories by person"><option value="">All people</option></select>
+        <span id="storiesResultCount" class="stories-result-count">0 stories</span>
+      </section>
+      <section id="storiesFeatured" class="stories-featured hidden"></section>
+      <section class="story-grid" id="storyGrid"></section>
     </main>
 
     <!-- ============ Side Detail Panel ============ -->
@@ -496,6 +719,81 @@
     </div>
   </div>
 
+  <!-- ============ Life Event Modal ============ -->
+  <div class="modal-overlay hidden" id="eventModalOverlay">
+    <div class="modal archive-editor-modal">
+      <div class="modal-header">
+        <div><p class="archive-kicker">LIFE EVENT</p><h3 id="eventModalTitle">Add a moment</h3></div>
+        <button class="modal-close" id="eventModalClose" type="button">&times;</button>
+      </div>
+      <form id="eventForm">
+        <div class="field-grid archive-form-grid">
+          <div class="field-row span-2"><label>Person *</label><select id="eventPerson" required></select></div>
+          <div class="field-row"><label>Event type *</label><select id="eventType" required>
+            <option value="birth">Birth</option><option value="education">Education</option>
+            <option value="marriage">Marriage</option><option value="work">Work</option>
+            <option value="migration">Migration</option><option value="milestone" selected>Milestone</option>
+            <option value="death">Death</option><option value="other">Other</option>
+          </select></div>
+          <div class="field-row"><label>Visibility</label><select id="eventVisibility">
+            <option value="family">Everyone in this family</option><option value="contributors">Contributors and admins</option>
+            <option value="admins">Admins and owner</option><option value="private">Only me</option>
+          </select></div>
+          <div class="field-row span-2"><label>Event title *</label><input id="eventTitle" maxlength="180" placeholder="e.g. Moved to Nairobi" required /></div>
+          <div class="field-row"><label>Start date or year</label><input id="eventDate" maxlength="50" placeholder="1968 or 1968-04-12" /></div>
+          <div class="field-row"><label>End date (optional)</label><input id="eventEndDate" maxlength="50" placeholder="1972" /></div>
+          <div class="field-row span-2"><label>Place</label><input id="eventPlace" maxlength="255" placeholder="Village, town, or country" /></div>
+          <div class="field-row span-2"><label>What happened?</label><textarea id="eventDescription" rows="5" maxlength="10000" placeholder="Add the details future generations should know."></textarea></div>
+          <div class="field-row"><label>Source title</label><input id="eventSourceTitle" maxlength="255" placeholder="Certificate, interview, archive..." /></div>
+          <div class="field-row"><label>Source link</label><input id="eventSourceUrl" type="url" placeholder="https://..." /></div>
+        </div>
+        <div id="eventFormMessage" class="hidden family-message"></div>
+        <div class="modal-footer">
+          <button class="btn btn-text hidden" id="deleteEventBtn" type="button">Delete event</button>
+          <div class="modal-footer-right"><button class="btn btn-ghost" id="cancelEventBtn" type="button">Cancel</button><button class="btn btn-primary" type="submit">Save event</button></div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ Story Editor Modal ============ -->
+  <div class="modal-overlay hidden" id="storyModalOverlay">
+    <div class="modal archive-editor-modal story-editor-modal">
+      <div class="modal-header">
+        <div><p class="archive-kicker">FAMILY JOURNAL</p><h3 id="storyModalTitle">Write a family story</h3></div>
+        <button class="modal-close" id="storyModalClose" type="button">&times;</button>
+      </div>
+      <form id="storyForm">
+        <div class="story-writing-sheet">
+          <input id="storyTitle" class="story-title-input" maxlength="220" placeholder="Give this memory a title..." required />
+          <textarea id="storyBody" class="story-body-input" maxlength="20000" placeholder="Tell the story in your own words..." required></textarea>
+        </div>
+        <div class="field-grid archive-form-grid story-meta-grid">
+          <div class="field-row"><label>When did this happen?</label><input id="storyDate" maxlength="50" placeholder="1987 or Summer 1987" /></div>
+          <div class="field-row"><label>Where?</label><input id="storyPlace" maxlength="255" placeholder="Place or family home" /></div>
+          <div class="field-row span-2"><label>People in this story</label><div id="storyPeoplePicker" class="people-picker"></div></div>
+          <div class="field-row span-2"><label>Visibility</label><select id="storyVisibility">
+            <option value="family">Everyone in this family</option><option value="contributors">Contributors and admins</option>
+            <option value="admins">Admins and owner</option><option value="private">Only me</option>
+          </select></div>
+        </div>
+        <div id="storyFormMessage" class="hidden family-message"></div>
+        <div class="modal-footer">
+          <button class="btn btn-text hidden" id="deleteStoryBtn" type="button">Delete story</button>
+          <div class="modal-footer-right"><button class="btn btn-ghost" id="cancelStoryBtn" type="button">Cancel</button><button class="btn btn-primary" type="submit">Publish story</button></div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ Story Reader Modal ============ -->
+  <div class="modal-overlay hidden" id="storyReaderOverlay">
+    <article class="modal story-reader">
+      <button class="story-reader-close" id="storyReaderClose" type="button" aria-label="Close">&times;</button>
+      <div id="storyReaderContent"></div>
+    </article>
+  </div>
+
   <!-- ============ Privacy and Account Modal ============ -->
   <div class="modal-overlay hidden" id="privacyModalOverlay">
     <div class="modal privacy-modal">
@@ -541,7 +839,8 @@
     </div>
   </div>
 
-  <script src="/app.js?v=85c6b06"></script>
+  <script src="/app.js?v=auth-help-v1"></script>
+  <script src="/archive.js?v=release3"></script>
 </body>
 
 </html>

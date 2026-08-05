@@ -79,6 +79,7 @@ async function loadTree() {
   $('#treeName').readOnly = !hasFamilyRole('admin');
   $('#personCount').textContent = `${state.persons.length} ${state.persons.length === 1 ? 'person' : 'people'}`;
   render();
+  await window.loadArchiveOverview?.();
 }
 
 // ------------------------------------------------------------------ relationship maps
@@ -649,6 +650,10 @@ function openSidePanel(id) {
       ${p.can_edit ? '<button class="btn btn-ghost" id="editPersonBtn">Edit</button>' : ''}
       <button class="btn btn-ghost" id="focusPersonBtn">Center in view</button>
     </div>
+    <div class="panel-actions archive-profile-actions">
+      <button class="btn btn-ghost" id="personTimelineBtn">View life timeline</button>
+      ${p.can_edit ? '<button class="btn btn-ghost" id="personAddEventBtn">Add life event</button>' : ''}
+    </div>
 
     ${relSection('Parents', parents, id, 'parent_of_target')}
     ${relSection('Spouse / Partner', spouses, id, 'spouse_of_target')}
@@ -661,6 +666,8 @@ function openSidePanel(id) {
 
   $('#editPersonBtn')?.addEventListener('click', () => openPersonModal(p));
   $('#focusPersonBtn').addEventListener('click', () => centerOnPerson(id));
+  $('#personTimelineBtn').addEventListener('click', () => window.openTimelineForPerson?.(id));
+  $('#personAddEventBtn')?.addEventListener('click', () => window.openEventForPerson?.(id));
 
   panel.querySelectorAll('.rel-name').forEach((el) => {
     el.addEventListener('click', () => {
@@ -1144,6 +1151,7 @@ async function refreshUserContext() {
 
 function showAuthenticatedApp(context) {
   applyUserContext(context);
+  resetApprovalScreenMode();
   $('#authScreen').classList.add('hidden');
   $('#app').classList.add('hidden');
   $('#approvalScreen').classList.add('hidden');
@@ -1156,6 +1164,33 @@ function showAuthenticatedApp(context) {
   $('#approvalScreen').classList.remove('hidden');
   loadApprovalAccess().catch((error) => showApprovalMessage(error.message));
   return false;
+}
+
+function resetApprovalScreenMode() {
+  $('#approvalScreen').classList.remove('public-help-mode');
+  $('#approvalBrandContext').textContent = 'Account approval';
+  $('#approvalLogoutBtn').textContent = 'Log out';
+}
+
+function openPublicHelp(targetId) {
+  $('#app').classList.add('hidden');
+  $('#authScreen').classList.add('hidden');
+  $('#approvalScreen').classList.add('public-help-mode');
+  $('#approvalScreen').classList.remove('hidden');
+  $('#approvalBrandContext').textContent = 'Product guide';
+  $('#approvalLogoutBtn').textContent = 'Back to sign in';
+  $('#approvalScreen').scrollTop = 0;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.getElementById(targetId)?.scrollIntoView({ block: 'start' });
+  }));
+}
+
+function closePublicHelp() {
+  resetApprovalScreenMode();
+  $('#approvalScreen').classList.add('hidden');
+  $('#approvalScreen').scrollTop = 0;
+  $('#authScreen').classList.remove('hidden');
+  window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
 }
 
 function showApprovalMessage(message, type = 'error') {
@@ -1481,8 +1516,59 @@ $('#resendVerificationBtn').addEventListener('click', async () => {
 });
 
 $('#approvalLogoutBtn').addEventListener('click', async () => {
+  if ($('#approvalScreen').classList.contains('public-help-mode')) {
+    closePublicHelp();
+    return;
+  }
   await api('/auth/logout', { method: 'POST' }).catch(() => {});
   window.location.reload();
+});
+
+$$('.auth-public-help-btn').forEach((button) => {
+  button.addEventListener('click', () => openPublicHelp(button.dataset.publicHelpTarget));
+});
+
+let approvalFaqCategory = 'all';
+
+function filterApprovalFaq() {
+  const query = $('#approvalFaqSearch').value.trim().toLocaleLowerCase();
+  const items = $$('.approval-faq-item');
+  let visibleCount = 0;
+
+  items.forEach((item) => {
+    const categoryMatches = approvalFaqCategory === 'all' || item.dataset.category === approvalFaqCategory;
+    const searchMatches = !query || item.textContent.toLocaleLowerCase().includes(query);
+    const visible = categoryMatches && searchMatches;
+    item.hidden = !visible;
+    if (!visible) item.open = false;
+    if (visible) visibleCount += 1;
+  });
+
+  $('#approvalFaqEmpty').classList.toggle('hidden', visibleCount > 0);
+  $('#approvalFaqResult').textContent = visibleCount === items.length && !query
+    ? 'Showing all questions'
+    : visibleCount + ' ' + (visibleCount === 1 ? 'question' : 'questions') + ' found';
+}
+
+function setApprovalFaqCategory(category) {
+  approvalFaqCategory = category;
+  $$('.approval-faq-filters [data-faq-category]').forEach((button) => {
+    const selected = button.dataset.faqCategory === category;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
+  filterApprovalFaq();
+}
+
+$('#approvalFaqSearch').addEventListener('input', filterApprovalFaq);
+$$('.approval-faq-filters [data-faq-category]').forEach((button) => {
+  button.addEventListener('click', () => setApprovalFaqCategory(button.dataset.faqCategory));
+});
+$$('[data-faq-category-link]').forEach((link) => {
+  link.addEventListener('click', () => {
+    $('#approvalFaqSearch').value = '';
+    setApprovalFaqCategory(link.dataset.faqCategoryLink);
+  });
 });
 
 async function loadSuperadminAccounts() {
