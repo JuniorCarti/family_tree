@@ -135,6 +135,7 @@ npm test
 - [Trust foundation release and rollout](docs/RELEASE_1_TRUST.md)
 - [Privacy and data control release](docs/RELEASE_2_PRIVACY.md)
 - [Family archive and storytelling release](docs/RELEASE_3_ARCHIVE.md)
+- [Mobile tree and scale release](docs/RELEASE_6_MOBILE_SCALE.md)
 
 Use a feature branch and pull request rather than committing directly to `main`.
 
@@ -144,3 +145,4 @@ Use a feature branch and pull request rather than committing directly to `main`.
 - SMTP and the private media bucket must remain configured in each deployed environment.
 - The Express API remains mostly monolithic; route/service separation would improve maintainability as it grows.
 - Archive citations are links in Release 3; document attachments, audio interviews, GEDCOM import, and print-book generation are not implemented yet.
+- Release 6 keeps long-lineage layout and touch navigation responsive; extremely large trees are not yet viewport-virtualized.
