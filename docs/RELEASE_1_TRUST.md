@@ -32,13 +32,21 @@ Set these Cloud Run environment variables:
 
 Keep SMTP_PASSWORD and SESSION_SECRET in Secret Manager. The production server now refuses to start when SESSION_SECRET is absent or shorter than 32 characters.
 
+The configured project uses these Secret Manager names:
+
+- lineage-database-url
+- lineage-session-secret
+- lineage-smtp-password
+
+Cloud Run reads DATABASE_URL and SESSION_SECRET from pinned secret version 1. Add SMTP_PASSWORD only after lineage-smtp-password has an enabled version.
+
 ## Cloud Storage setup
 
 Create a regional bucket in the same region as Cloud Run. Do not make the bucket public. Give the Cloud Run runtime service account permission to create and read objects in only this bucket.
 
 Example commands:
 
-    gcloud storage buckets create gs://family-tree-a4c4f-media --location=africa-south1 --uniform-bucket-level-access
+    gcloud storage buckets create gs://family-tree-a4c4f-media --location=us-central1 --uniform-bucket-level-access --public-access-prevention
     gcloud storage buckets add-iam-policy-binding gs://family-tree-a4c4f-media --member=serviceAccount:CLOUD_RUN_SERVICE_ACCOUNT --role=roles/storage.objectUser
 
 Uploaded objects are served through authenticated /api/media/:id requests. The database checks active-family membership before any object is streamed.
