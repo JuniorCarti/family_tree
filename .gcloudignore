@@ -1,0 +1,11 @@
+.gcloudignore
+.git
+.gitignore
+.env
+.env.*
+.firebase
+.codex
+.codebase-memory
+node_modules
+npm-debug.log
+public/uploads
