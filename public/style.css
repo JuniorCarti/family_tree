@@ -677,6 +677,107 @@ body {
   resize: vertical;
 }
 
+.privacy-field-hint {
+  margin: -2px 0 4px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.privacy-notice {
+  margin: 14px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(143, 101, 38, .25);
+  border-radius: 8px;
+  background: rgba(217, 201, 163, .18);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.privacy-profile-meta {
+  margin-top: 10px;
+  color: var(--gold-deep);
+  font: 500 10px/1.4 'IBM Plex Mono', monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.privacy-modal {
+  width: min(680px, calc(100vw - 2rem));
+  max-height: min(88vh, 760px);
+  overflow-y: auto;
+}
+
+.privacy-section-heading,
+.recycle-row,
+.recycle-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.privacy-section-heading,
+.recycle-row {
+  justify-content: space-between;
+}
+
+.privacy-section-heading h4,
+.danger-zone h4 {
+  margin-bottom: 4px;
+}
+
+.recycle-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.recycle-row {
+  padding: 11px 12px;
+  border: 1px solid var(--card-edge);
+  border-radius: 9px;
+  background: var(--parchment);
+}
+
+.danger-zone {
+  border-color: rgba(161, 58, 58, .35);
+  background: rgba(161, 58, 58, .035);
+}
+
+.delete-account-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.delete-account-form input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--card-edge);
+  border-radius: 7px;
+  background: var(--parchment);
+}
+
+.btn-danger {
+  border: 1px solid #a13a3a;
+  background: #a13a3a;
+  color: #fff;
+}
+
+@media (max-width: 520px) {
+  .privacy-section-heading,
+  .recycle-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .recycle-actions {
+    flex-wrap: wrap;
+  }
+}
+
 .field-row input:focus,
 .field-row select:focus,
 .field-row textarea:focus {
