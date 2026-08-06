@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const db = require('./db');
+const familyAccess = require('./family-access');
 const privacyAccess = require('./privacy-access');
 const mediaStorage = require('./media-storage');
 
@@ -11,7 +12,7 @@ const SUBJECTS = new Set(['person','relationship','event','story']);
 const evidenceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 }, fileFilter: (req, file, cb) => cb(null, ['application/pdf','image/jpeg','image/png','image/webp','image/gif','image/tiff','text/plain'].includes(file.mimetype)) });
 
 async function initializeEvidence() {
-  await Promise.all([db.ready, privacyAccess.ready, mediaStorage.ready]);
+  await Promise.all([db.ready, familyAccess.ready, privacyAccess.ready, mediaStorage.ready]);
   await db.query("CREATE TABLE IF NOT EXISTS research_sources (id SERIAL PRIMARY KEY, family_id INTEGER NOT NULL REFERENCES families(id) ON DELETE CASCADE, source_type VARCHAR(40) NOT NULL DEFAULT 'other', title VARCHAR(300) NOT NULL, author VARCHAR(300), repository VARCHAR(300), repository_url TEXT, archive_location TEXT, call_number VARCHAR(200), publication_info TEXT, source_date VARCHAR(100), description TEXT, citation_template TEXT, created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, created_at TIMESTAMP NOT NULL DEFAULT now(), updated_at TIMESTAMP NOT NULL DEFAULT now(), deleted_at TIMESTAMP)");
   await db.query("CREATE TABLE IF NOT EXISTS source_citations (id SERIAL PRIMARY KEY, family_id INTEGER NOT NULL REFERENCES families(id) ON DELETE CASCADE, source_id INTEGER NOT NULL REFERENCES research_sources(id) ON DELETE CASCADE, subject_type VARCHAR(20) NOT NULL, subject_id INTEGER NOT NULL, fact_key VARCHAR(100), claim_value TEXT, page VARCHAR(200), record_identifier VARCHAR(200), citation_text TEXT, transcription TEXT, translation TEXT, confidence VARCHAR(20) NOT NULL DEFAULT 'probable', research_note TEXT, conflict_group VARCHAR(120), created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, created_at TIMESTAMP NOT NULL DEFAULT now(), updated_at TIMESTAMP NOT NULL DEFAULT now(), deleted_at TIMESTAMP)");
   await db.query("CREATE TABLE IF NOT EXISTS evidence_media (citation_id INTEGER NOT NULL REFERENCES source_citations(id) ON DELETE CASCADE, media_id UUID NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE, caption VARCHAR(300), created_at TIMESTAMP NOT NULL DEFAULT now(), PRIMARY KEY (citation_id, media_id))");

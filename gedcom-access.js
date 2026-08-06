@@ -3,13 +3,14 @@ const multer = require('multer');
 const AdmZip = require('adm-zip');
 const crypto = require('crypto');
 const db = require('./db');
+const familyAccess = require('./family-access');
 const mediaStorage = require('./media-storage');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 async function initializeGedcom() {
-  await db.ready;
+  await Promise.all([db.ready, familyAccess.ready]);
   await db.query(`CREATE TABLE IF NOT EXISTS gedcom_import_sessions (
     id UUID PRIMARY KEY, family_id INTEGER NOT NULL REFERENCES families(id) ON DELETE CASCADE,
     uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL, filename TEXT NOT NULL,
