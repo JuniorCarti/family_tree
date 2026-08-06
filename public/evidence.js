@@ -5,7 +5,7 @@
   const esc = (v) => window.escapeHtml ? escapeHtml(v) : String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const typeLabels = { birth_certificate:'Birth certificate', death_certificate:'Death certificate', marriage_record:'Marriage record', census:'Census', school_record:'School record', church_record:'Church record', land_record:'Land record', newspaper:'Newspaper', photograph:'Photograph', interview:'Interview', online_archive:'Online archive', other:'Other' };
   async function loadEvidence() {
-    if (!window.currentUser || currentUser.account_status !== 'approved') return;
+    if (!currentUser || currentUser.account_status !== 'approved') return;
     const q = $('#evidenceSearch')?.value.trim() || '';
     const data = await api('/evidence/sources' + (q ? `?q=${encodeURIComponent(q)}` : ''));
     sources = data.sources || [];

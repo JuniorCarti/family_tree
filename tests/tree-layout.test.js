@@ -202,3 +202,15 @@ test('exploration shell exposes every view, large-tree LOD, minimap, and accessi
   assert.match(cssSource, /@media print/);
   assert.match(cssSource, /@media \(prefers-reduced-motion: reduce\)/);
 });
+
+test('Release 9 memory and evidence loaders restore data after authentication reload', () => {
+  const memoriesSource = readFileSync(path.join(__dirname, '..', 'public', 'memories.js'), 'utf8');
+  const evidenceSource = readFileSync(path.join(__dirname, '..', 'public', 'evidence.js'), 'utf8');
+  const htmlSource = readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  assert.match(memoriesSource, /if\(!currentUser\|\|currentUser\.account_status!==['"]approved['"]\)return/);
+  assert.doesNotMatch(memoriesSource, /window\.currentUser/);
+  assert.doesNotMatch(evidenceSource, /window\.currentUser/);
+  assert.match(htmlSource, /id="memoriesView"/);
+  assert.match(htmlSource, /id="memoryComposerForm"/);
+  assert.match(htmlSource, /memories\.js\?v=release9/);
+});
