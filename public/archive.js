@@ -83,6 +83,8 @@
       if (activeView === 'stories') await loadStories();
       if (activeView === 'evidence') await window.loadEvidence?.();
       if (activeView === 'memories') await window.loadMemories?.();
+      if (activeView === 'quality') await window.loadQuality?.();
+      if (activeView === 'collaboration') await window.loadCollaboration?.();
     } catch (error) {
       console.warn('Archive overview unavailable:', error.message);
     }
@@ -103,6 +105,8 @@
     $('#storiesView').classList.toggle('hidden', view !== 'stories');
     $('#evidenceView').classList.toggle('hidden', view !== 'evidence');
     $('#memoriesView').classList.toggle('hidden', view !== 'memories');
+    $('#qualityView').classList.toggle('hidden', view !== 'quality');
+    $('#collaborationView').classList.toggle('hidden', view !== 'collaboration');
     $('#sidePanel').classList.add('hidden');
     ['#zoomOutBtn', '#zoomInBtn', '#resetViewBtn', '#addPersonBtn', '#mergeBtn', '#exportBtn'].forEach((selector) => {
       $(selector).classList.toggle('hidden', view !== 'tree');
@@ -119,6 +123,8 @@
     }
     if (view === 'evidence') await window.loadEvidence?.();
     if (view === 'memories') await window.loadMemories?.();
+    if (view === 'quality') await window.loadQuality?.();
+    if (view === 'collaboration') await window.loadCollaboration?.();
   }
   window.openTimelineForPerson = (personId) => switchArchiveView('timeline', { personId });
 

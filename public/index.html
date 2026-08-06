@@ -438,6 +438,12 @@
           <span class="workspace-tab-icon">✦</span><span>Memories</span>
           <span class="workspace-count" id="memoriesNavCount">0</span>
         </button>
+        <button class="workspace-tab" type="button" data-view="quality" aria-selected="false">
+          <span class="workspace-tab-icon">✓</span><span>Data quality</span><span class="workspace-count" id="qualityNavCount">0</span>
+        </button>
+        <button class="workspace-tab" type="button" data-view="collaboration" aria-selected="false">
+          <span class="workspace-tab-icon">↗</span><span>Collaborate</span><span class="workspace-count" id="collabNavCount">0</span>
+        </button>
       </div>
       <div class="workspace-nav-note"><span></span>Private family archive</div>
     </nav>
@@ -624,6 +630,20 @@
       <section class="memory-section hidden" id="memoryCalendarSection"><div class="memory-section-heading"><div><p class="archive-kicker">THE FAMILY CALENDAR</p><h2>On this day in our family.</h2></div></div><div class="calendar-memory-grid" id="memoryCalendarGrid"></div></section>
       <section class="memory-section hidden" id="memoryMemorialsSection"><div class="memory-section-heading"><div><p class="archive-kicker">REMEMBERING</p><h2>Names, lives, and love carried forward.</h2></div><button class="btn btn-primary" id="addMemorialBtn" type="button">Create memorial</button></div><div class="memorial-grid" id="memorialGrid"></div></section>
       <aside class="memory-detail hidden" id="memoryDetail"></aside>
+    </main>
+
+    <main class="archive-view quality-view hidden" id="qualityView">
+      <section class="archive-hero quality-hero"><div class="archive-hero-copy"><p class="archive-kicker">CHRONOLOGY &amp; DATA QUALITY</p><h1>Let the timeline ask <em>good questions.</em></h1><p>Find impossible dates, unusual ages, missing context, and places that need a human review before they become family history.</p></div><div class="archive-hero-actions"><button class="btn archive-primary-action" id="runQualityScanBtn" type="button">Scan the family tree</button><button class="btn archive-secondary-action" id="qualityTimelineBtn" type="button">Open timeline</button></div><div class="archive-stats"><article><strong id="qualityErrorCount">0</strong><span>errors</span></article><article><strong id="qualityWarningCount">0</strong><span>warnings</span></article><article><strong id="qualityInfoCount">0</strong><span>missing context</span></article></div></section>
+      <section class="quality-shell"><div class="quality-intro"><div><p class="archive-kicker">REVIEW QUEUE</p><h2>Suggested corrections stay suggestions.</h2><p>Every finding is reviewable. Nothing changes the tree automatically.</p></div><select id="qualityStatusFilter"><option value="open">Open findings</option><option value="all">All findings</option><option value="dismissed">Dismissed</option><option value="fixed">Fixed</option></select></div><div id="qualityFindingList" class="quality-finding-list"></div></section>
+    </main>
+
+    <main class="archive-view collaboration-view hidden" id="collaborationView">
+      <section class="archive-hero collaboration-hero"><div class="archive-hero-copy"><p class="archive-kicker">FAMILY WORKROOM</p><h1>Build the record <em>together.</em></h1><p>Propose edits, discuss facts, assign research, and keep a clear history of who contributed what.</p></div><div class="archive-hero-actions"><button class="btn archive-primary-action" id="newResearchTaskBtn" type="button">Assign research</button><button class="btn archive-secondary-action" id="newAnnouncementBtn" type="button">Post announcement</button></div><div class="archive-stats"><article><strong id="collabProposalCount">0</strong><span>proposals</span></article><article><strong id="collabTaskCount">0</strong><span>research tasks</span></article><article><strong id="collabUnreadCount">0</strong><span>unread notices</span></article></div></section>
+      <div class="collab-tabs" role="tablist"><button class="collab-tab active" data-collab-section="review" type="button">Review queue</button><button class="collab-tab" data-collab-section="tasks" type="button">Research tasks</button><button class="collab-tab" data-collab-section="activity" type="button">Activity</button><button class="collab-tab" data-collab-section="notices" type="button">Notices</button></div>
+      <section class="collab-section" id="collabReviewSection"><div class="collab-heading"><div><p class="archive-kicker">SIDE-BY-SIDE REVIEW</p><h2>Proposed edits and conflicts.</h2></div><button class="btn btn-ghost" id="refreshCollabBtn" type="button">Refresh</button></div><div id="proposalList" class="proposal-list"></div><div class="collab-heading"><div><p class="archive-kicker">DISCUSSION</p><h2>Family comments.</h2></div></div><div id="commentList" class="comment-list"></div><form id="collabCommentForm" class="collab-comment-form"><input id="collabCommentEntityType" value="person" aria-label="Comment entity type" /><input id="collabCommentEntityId" type="number" placeholder="Person or event ID" required /><input id="collabCommentBody" placeholder="Add a note or mention @relative@example.com" required /><button class="btn btn-primary" type="submit">Post</button></form></section>
+      <section class="collab-section hidden" id="collabTasksSection"><div class="collab-heading"><div><p class="archive-kicker">RESEARCH BOARD</p><h2>Questions the family can answer together.</h2></div></div><div id="taskList" class="task-list"></div></section>
+      <section class="collab-section hidden" id="collabActivitySection"><div class="collab-heading"><div><p class="archive-kicker">WHO DID WHAT</p><h2>A living record of contribution.</h2></div></div><div id="activityList" class="activity-list"></div></section>
+      <section class="collab-section hidden" id="collabNoticesSection"><div class="collab-heading"><div><p class="archive-kicker">FAMILY BULLETIN</p><h2>Announcements and notifications.</h2></div></div><div id="announcementList" class="announcement-list"></div><div id="notificationList" class="notification-list"></div></section>
     </main>
 
     <div class="modal-overlay hidden" id="memoryComposerOverlay"><div class="modal memory-composer"><div class="modal-header"><div><p class="archive-kicker">PRESERVE A MOMENT</p><h3 id="memoryComposerTitle">Add a memory</h3></div><button class="modal-close" id="memoryComposerClose">&times;</button></div><form id="memoryComposerForm" class="archive-form-grid"><label class="span-2">Title<input id="memoryTitle" required maxlength="220" placeholder="A name future generations will recognize" /></label><label>Type<select id="memoryType"><option value="photo">Photo</option><option value="video">Video</option><option value="audio">Audio</option><option value="document">Document</option></select></label><label>File<input id="memoryFile" type="file" accept="image/*,audio/*,video/*,.pdf,.txt" /></label><label>Date<input id="memoryDate" placeholder="1998 or 12 June 1998" /></label><label>Place<input id="memoryPlace" placeholder="Kakamega, Kenya" /></label><label>Photographer / speaker<input id="memoryPhotographer" /></label><label>Tag people by ID<input id="memoryPeople" placeholder="1, 2, 3" /></label><label class="span-2">Caption<textarea id="memoryCaption" rows="3" placeholder="What should the family know about this moment?"></textarea></label><label class="span-2">Transcript or translation<textarea id="memoryTranscript" rows="3" placeholder="For oral histories, add a transcript or translation here."></textarea></label><label class="checkbox-field span-2"><input id="memoryPublic" type="checkbox" /> Create a QR-ready public memory link</label><div class="span-2 form-actions"><button class="btn btn-ghost" type="button" id="memoryComposerCancel">Cancel</button><button class="btn btn-primary" type="submit">Save memory</button></div><p id="memoryComposerMessage" class="hidden family-message"></p></form></div></div>
@@ -1004,6 +1024,7 @@
   <script src="/archive.js?v=exploration3"></script>
   <script src="/evidence.js?v=release45b"></script>
   <script src="/memories.js?v=release9c"></script>
+  <script src="/quality-collab.js?v=release78"></script>
 </body>
 
 </html>
