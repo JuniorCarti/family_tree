@@ -1,4 +1,4 @@
-const CACHE='lineage-shell-v13';
+const CACHE='lineage-shell-v13-1';
 const ASSETS=['/','/style.css','/app.js','/explorer.js','/tree-layout.js','/archive.js','/evidence.js','/memories.js','/quality-collab.js','/discovery-localization.js','/release13.js','/manifest.webmanifest','/favicon.svg'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
