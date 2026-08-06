@@ -434,6 +434,10 @@
           <span class="workspace-tab-icon">◎</span><span>Evidence</span>
           <span class="workspace-count" id="evidenceNavCount">0</span>
         </button>
+        <button class="workspace-tab" type="button" data-view="memories" aria-selected="false">
+          <span class="workspace-tab-icon">✦</span><span>Memories</span>
+          <span class="workspace-count" id="memoriesNavCount">0</span>
+        </button>
       </div>
       <div class="workspace-nav-note"><span></span>Private family archive</div>
     </nav>
@@ -606,6 +610,23 @@
       <section class="archive-toolbar evidence-toolbar"><div class="archive-search"><span>⌕</span><input id="evidenceSearch" type="search" placeholder="Search sources and repositories" /></div><select id="evidenceSubjectType"><option value="person">People</option><option value="relationship">Relationships</option><option value="event">Life events</option><option value="story">Stories</option></select><input id="evidenceSubjectId" type="number" min="1" placeholder="Subject ID" aria-label="Evidence subject ID" /><button class="btn btn-ghost" id="loadEvidenceBtn" type="button">View attached evidence</button><span id="evidenceResultCount" class="stories-result-count">0 sources</span></section>
       <section class="evidence-layout"><div class="evidence-source-list" id="evidenceSourceList"></div><aside class="evidence-detail" id="evidenceDetail"><div class="empty-card"><span class="empty-glyph">◎</span><h2>Build a source library</h2><p>Select a source or enter a subject ID to review the evidence behind a family fact.</p></div></aside></section>
     </main>
+
+    <main class="archive-view memories-view hidden" id="memoriesView">
+      <section class="archive-hero memories-hero">
+        <div class="archive-hero-copy"><p class="archive-kicker">THE FAMILY MEMORY HOUSE</p><h1>Keep the moments that make <em>us.</em></h1><p>Photos, voices, recipes, stories, and the small details future generations will be glad you saved.</p></div>
+        <div class="archive-hero-actions"><button class="btn archive-primary-action" id="addMemoryBtn" type="button">Add a memory</button><button class="btn archive-secondary-action" id="startSlideshowBtn" type="button">Start slideshow</button><button class="btn archive-secondary-action" id="printMemoryBookBtn" type="button">Print memory book</button></div>
+        <div class="archive-stats memory-stats"><article><strong id="memoryCount">0</strong><span>memories</span></article><article><strong id="albumCount">0</strong><span>albums</span></article><article><strong id="recipeCount">0</strong><span>recipes</span></article><article><strong id="memorialCount">0</strong><span>memorials</span></article></div>
+      </section>
+      <div class="memory-section-tabs" role="tablist"><button class="memory-section-tab active" data-memory-section="gallery" type="button">Gallery</button><button class="memory-section-tab" data-memory-section="albums" type="button">Albums</button><button class="memory-section-tab" data-memory-section="recipes" type="button">Family recipes</button><button class="memory-section-tab" data-memory-section="calendar" type="button">On this day</button><button class="memory-section-tab" data-memory-section="memorials" type="button">Memorials</button></div>
+      <section class="memory-section" id="memoryGallerySection"><div class="memory-toolbar"><div class="archive-search"><span>⌕</span><input id="memorySearch" type="search" placeholder="Search captions, places, and people" /></div><select id="memoryTypeFilter"><option value="">All memories</option><option value="photo">Photos</option><option value="video">Videos</option><option value="audio">Audio</option><option value="document">Documents</option><option value="story">Stories</option></select><select id="memoryPersonFilter"><option value="">Everyone</option></select><span id="memoryResultCount" class="stories-result-count">0 memories</span></div><div class="memory-grid" id="memoryGrid"></div></section>
+      <section class="memory-section hidden" id="memoryAlbumsSection"><div class="memory-section-heading"><div><p class="archive-kicker">CURATED COLLECTIONS</p><h2>Albums with a beginning, middle, and meaning.</h2></div><button class="btn btn-primary" id="addAlbumBtn" type="button">New album</button></div><div class="album-grid" id="albumGrid"></div></section>
+      <section class="memory-section hidden" id="memoryRecipesSection"><div class="memory-section-heading"><div><p class="archive-kicker">RECIPES &amp; RITUALS</p><h2>The taste of home.</h2></div><button class="btn btn-primary" id="addRecipeBtn" type="button">Save a recipe</button></div><div class="recipe-grid" id="recipeGrid"></div></section>
+      <section class="memory-section hidden" id="memoryCalendarSection"><div class="memory-section-heading"><div><p class="archive-kicker">THE FAMILY CALENDAR</p><h2>On this day in our family.</h2></div></div><div class="calendar-memory-grid" id="memoryCalendarGrid"></div></section>
+      <section class="memory-section hidden" id="memoryMemorialsSection"><div class="memory-section-heading"><div><p class="archive-kicker">REMEMBERING</p><h2>Names, lives, and love carried forward.</h2></div><button class="btn btn-primary" id="addMemorialBtn" type="button">Create memorial</button></div><div class="memorial-grid" id="memorialGrid"></div></section>
+      <aside class="memory-detail hidden" id="memoryDetail"></aside>
+    </main>
+
+    <div class="modal-overlay hidden" id="memoryComposerOverlay"><div class="modal memory-composer"><div class="modal-header"><div><p class="archive-kicker">PRESERVE A MOMENT</p><h3 id="memoryComposerTitle">Add a memory</h3></div><button class="modal-close" id="memoryComposerClose">&times;</button></div><form id="memoryComposerForm" class="archive-form-grid"><label class="span-2">Title<input id="memoryTitle" required maxlength="220" placeholder="A name future generations will recognize" /></label><label>Type<select id="memoryType"><option value="photo">Photo</option><option value="video">Video</option><option value="audio">Audio</option><option value="document">Document</option></select></label><label>File<input id="memoryFile" type="file" accept="image/*,audio/*,video/*,.pdf,.txt" /></label><label>Date<input id="memoryDate" placeholder="1998 or 12 June 1998" /></label><label>Place<input id="memoryPlace" placeholder="Kakamega, Kenya" /></label><label>Photographer / speaker<input id="memoryPhotographer" /></label><label>Tag people by ID<input id="memoryPeople" placeholder="1, 2, 3" /></label><label class="span-2">Caption<textarea id="memoryCaption" rows="3" placeholder="What should the family know about this moment?"></textarea></label><label class="span-2">Transcript or translation<textarea id="memoryTranscript" rows="3" placeholder="For oral histories, add a transcript or translation here."></textarea></label><label class="checkbox-field span-2"><input id="memoryPublic" type="checkbox" /> Create a QR-ready public memory link</label><div class="span-2 form-actions"><button class="btn btn-ghost" type="button" id="memoryComposerCancel">Cancel</button><button class="btn btn-primary" type="submit">Save memory</button></div><p id="memoryComposerMessage" class="hidden family-message"></p></form></div></div>
 
     <!-- ============ Side Detail Panel ============ -->
     <aside class="side-panel hidden" id="sidePanel">
@@ -982,6 +1003,7 @@
   <script src="/app.js?v=exploration3"></script>
   <script src="/archive.js?v=exploration3"></script>
   <script src="/evidence.js?v=release45"></script>
+  <script src="/memories.js?v=release9"></script>
 </body>
 
 </html>

@@ -42,7 +42,7 @@ const ready = initializeMedia();
 async function save(req, file, options = {}) {
   await ready;
   const id = crypto.randomUUID();
-  const extension = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'image/tiff': '.tiff', 'application/pdf': '.pdf', 'text/plain': '.txt' }[file.mimetype] || '';
+  const extension = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'image/tiff': '.tiff', 'application/pdf': '.pdf', 'text/plain': '.txt', 'audio/mpeg': '.mp3', 'audio/wav': '.wav', 'audio/ogg': '.ogg', 'audio/mp4': '.m4a', 'video/mp4': '.mp4', 'video/webm': '.webm', 'video/quicktime': '.mov' }[file.mimetype] || '';
   const objectName = `families/${req.family.id}/${id}${extension}`;
   const cloudFile = storage ? storage.bucket(bucketName).file(objectName) : null;
   const localPath = path.join(localDir, `${id}${extension}`);
@@ -80,6 +80,11 @@ async function stream(req, res) {
     const evidenceAccess = require('./evidence-access');
     const allowed = await evidenceAccess.subjectVisibleForCitation(citation.rows[0].citation_id, req);
     if (!allowed) return res.status(404).json({ error: 'Media not found' });
+  } else if (asset.purpose === 'memory') {
+    const memory = await db.query('SELECT visibility, created_by_user_id FROM memory_items WHERE media_id = $1 AND family_id = $2 AND deleted_at IS NULL LIMIT 1', [asset.id, req.family.id]);
+    if (!memory.rows[0] || (memory.rows[0].visibility === 'private' && Number(memory.rows[0].created_by_user_id) !== Number(req.session.userId) && !['admin', 'owner'].includes(req.family.role))) return res.status(404).json({ error: 'Media not found' });
+    if (memory.rows[0].visibility === 'admins' && !['admin', 'owner'].includes(req.family.role) && Number(memory.rows[0].created_by_user_id) !== Number(req.session.userId)) return res.status(404).json({ error: 'Media not found' });
+    if (memory.rows[0].visibility === 'contributors' && !['contributor', 'admin', 'owner'].includes(req.family.role) && Number(memory.rows[0].created_by_user_id) !== Number(req.session.userId)) return res.status(404).json({ error: 'Media not found' });
   } else if (Number(asset.uploaded_by) !== Number(req.session.userId)
       && !['admin', 'owner'].includes(req.family.role)) {
     return res.status(404).json({ error: 'Media not found' });

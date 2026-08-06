@@ -82,6 +82,7 @@
       if (activeView === 'timeline') await loadTimeline();
       if (activeView === 'stories') await loadStories();
       if (activeView === 'evidence') await window.loadEvidence?.();
+      if (activeView === 'memories') await window.loadMemories?.();
     } catch (error) {
       console.warn('Archive overview unavailable:', error.message);
     }
@@ -101,6 +102,7 @@
     $('#timelineView').classList.toggle('hidden', view !== 'timeline');
     $('#storiesView').classList.toggle('hidden', view !== 'stories');
     $('#evidenceView').classList.toggle('hidden', view !== 'evidence');
+    $('#memoriesView').classList.toggle('hidden', view !== 'memories');
     $('#sidePanel').classList.add('hidden');
     ['#zoomOutBtn', '#zoomInBtn', '#resetViewBtn', '#addPersonBtn', '#mergeBtn', '#exportBtn'].forEach((selector) => {
       $(selector).classList.toggle('hidden', view !== 'tree');
@@ -116,6 +118,7 @@
       await loadStories();
     }
     if (view === 'evidence') await window.loadEvidence?.();
+    if (view === 'memories') await window.loadMemories?.();
   }
   window.openTimelineForPerson = (personId) => switchArchiveView('timeline', { personId });
 

@@ -27,6 +27,7 @@ const platformAccess = require('../platform-access');
 const privacyAccess = require('../privacy-access');
 const archiveAccess = require('../archive-access');
 const explorationAccess = require('../exploration-access');
+const memoryAccess = require('../memory-access');
 
 async function signup(agent, body) {
   return agent.post('/api/auth/signup').send({ password, ...body });
@@ -37,7 +38,7 @@ async function approve(superadmin, userId) {
 }
 
 test('payment approval gates shared-family access and roles', async (t) => {
-  await Promise.all([db.ready, familyAccess.ready, platformAccess.ready, privacyAccess.ready, archiveAccess.ready, explorationAccess.ready]);
+  await Promise.all([db.ready, familyAccess.ready, platformAccess.ready, privacyAccess.ready, archiveAccess.ready, explorationAccess.ready, memoryAccess.ready]);
   t.after(async () => {
     await db.pool.end();
     fs.rmSync(mediaTestDir, { recursive: true, force: true });

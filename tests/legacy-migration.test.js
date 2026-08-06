@@ -79,8 +79,9 @@ test('legacy account-owned lineage migrates intact into an owner family', async 
   const db = require('../db');
   const familyAccess = require('../family-access');
   const platformAccess = require('../platform-access');
+  const memoryAccess = require('../memory-access');
   try {
-    await Promise.all([db.ready, familyAccess.ready, platformAccess.ready]);
+    await Promise.all([db.ready, familyAccess.ready, platformAccess.ready, memoryAccess.ready]);
 
     const family = await db.query(`
       SELECT f.id, f.name, f.owner_user_id, fm.role
