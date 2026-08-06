@@ -212,5 +212,5 @@ test('Release 9 memory and evidence loaders restore data after authentication re
   assert.doesNotMatch(evidenceSource, /window\.currentUser/);
   assert.match(htmlSource, /id="memoriesView"/);
   assert.match(htmlSource, /id="memoryComposerForm"/);
-  assert.match(htmlSource, /memories\.js\?v=release9/);
+  assert.match(htmlSource, /memories\.js\?v=release9b/);
 });
