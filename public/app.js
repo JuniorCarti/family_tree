@@ -58,6 +58,14 @@ function initials(p) {
 let currentUser = null;
 
 async function api(path, opts = {}) {
+  const method = String(opts.method || 'GET').toUpperCase();
+  if (!navigator.onLine && method !== 'GET') {
+    const queue = JSON.parse(localStorage.getItem('lineage-offline-queue') || '[]');
+    queue.push({ path, method, body: opts.body || null, queued_at: new Date().toISOString() });
+    localStorage.setItem('lineage-offline-queue', JSON.stringify(queue));
+    document.body.classList.add('offline-mode');
+    return { queued: true, offline: true };
+  }
   const res = await fetch(`${API}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...opts,
