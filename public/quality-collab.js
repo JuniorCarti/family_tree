@@ -15,4 +15,11 @@
   async function addAnnouncement(){const title=prompt('Announcement title');if(!title)return;await api('/collaboration/announcements',{method:'POST',body:JSON.stringify({title,body:prompt('Announcement message')||'',pinned:true})});await loadCollaboration();}
   async function addComment(event){event.preventDefault();await api('/collaboration/comments',{method:'POST',body:JSON.stringify({entity_type:$('#collabCommentEntityType').value,entity_id:Number($('#collabCommentEntityId').value),body:$('#collabCommentBody').value.trim()})});$('#collabCommentBody').value='';await loadCollaboration();}
   window.loadQuality=loadQuality;window.loadCollaboration=loadCollaboration;$('#runQualityScanBtn')?.addEventListener('click',()=>scanQuality().catch(e=>alert(e.message)));$('#qualityStatusFilter')?.addEventListener('change',()=>loadQuality().catch(e=>alert(e.message)));$('#qualityTimelineBtn')?.addEventListener('click',()=>window.openTimelineForPerson?.());$('#newResearchTaskBtn')?.addEventListener('click',()=>addTask().catch(e=>alert(e.message)));$('#newAnnouncementBtn')?.addEventListener('click',()=>addAnnouncement().catch(e=>alert(e.message)));$('#refreshCollabBtn')?.addEventListener('click',()=>loadCollaboration().catch(e=>alert(e.message)));$('#collabCommentForm')?.addEventListener('submit',(e)=>addComment(e).catch(err=>alert(err.message)));$$('.collab-tab').forEach(btn=>btn.addEventListener('click',()=>{$$('.collab-tab').forEach(x=>x.classList.toggle('active',x===btn));$$('.collab-section').forEach(x=>x.classList.toggle('hidden',x.id!==`collab${btn.dataset.collabSection[0].toUpperCase()+btn.dataset.collabSection.slice(1)}Section`));}));
+  const baseCollaborationLoad = window.loadCollaboration;
+  window.loadCollaboration = async () => {
+    await baseCollaborationLoad();
+    const data = await api('/collaboration/announcements');
+    const items = data.announcements || [];
+    $('#announcementList').innerHTML = items.length ? items.map(a => `<article class=announcement-card><p class=archive-kicker>${a.pinned ? 'PINNED � ' : ''}FAMILY ANNOUNCEMENT</p><h3>${esc(a.title)}</h3><p>${esc(a.body)}</p></article>`).join('') : '<div class=archive-empty><h3>No announcements.</h3></div>';
+  };
 })();
