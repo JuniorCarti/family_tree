@@ -139,6 +139,13 @@
     showAlt(false); $('#treeSvg')?.classList.add('hidden');
     let stage = $('#tree3dStage');
     if (!stage) { stage = document.createElement('div'); stage.id = 'tree3dStage'; stage.className = 'tree-3d-stage'; $('#canvasWrap').appendChild(stage); }
+    if (!stage.dataset.gestures) {
+      stage.dataset.gestures = 'true'; stage.style.touchAction = 'none';
+      stage.addEventListener('pointerdown', event => { stage.setPointerCapture?.(event.pointerId); stage.dataset.dragging = 'true'; stage.dataset.lastX = event.clientX; stage.dataset.lastY = event.clientY; });
+      stage.addEventListener('pointermove', event => { if (stage.dataset.dragging !== 'true') return; const dx=event.clientX-Number(stage.dataset.lastX); const dy=event.clientY-Number(stage.dataset.lastY); stage.dataset.lastX=event.clientX; stage.dataset.lastY=event.clientY; state.orbitY=(state.orbitY||0)+dx*.25; state.orbitX=Math.max(28,Math.min(72,(state.orbitX||54)-dy*.18)); const scene=stage.querySelector('.tree-3d-scene'); if(scene) scene.style.transform=`translate(${state.pan3dX||0}px,${state.pan3dY||0}px) rotateX(${state.orbitX}deg) rotateY(${state.orbitY}deg) scale(${state.zoom3d||1})`; });
+      ['pointerup','pointercancel','lostpointercapture'].forEach(type => stage.addEventListener(type, () => { stage.dataset.dragging='false'; }));
+      stage.addEventListener('wheel', event => { event.preventDefault(); state.zoom3d=Math.max(.45,Math.min(2.2,(state.zoom3d||1)*(event.deltaY<0?1.08:.93))); const scene=stage.querySelector('.tree-3d-scene'); if(scene) scene.style.transform=`translate(${state.pan3dX||0}px,${state.pan3dY||0}px) rotateX(${state.orbitX||54}deg) rotateY(${state.orbitY||0}deg) scale(${state.zoom3d})`; }, { passive:false });
+    }
     stage.innerHTML = '';
     const layout = layoutTools.computeTreeLayout(projected.persons, projected.relationships, { cardWidth: 190, cardHeight: 92, spouseGap: 32, horizontalGap: 66, verticalGap: 90 });
     const scene = document.createElement('div'); scene.className = 'tree-3d-scene'; stage.appendChild(scene);
