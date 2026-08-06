@@ -12,6 +12,7 @@
     graph: null,
     events: [],
     view: 'family',
+    presentation: '2d',
     focusId: null,
     depth: 4,
     focusBranch: false,
@@ -134,12 +135,24 @@
     render();
   }
 
+  function render3D(projected) {
+    showAlt(false); $('#treeSvg')?.classList.add('hidden');
+    let stage = $('#tree3dStage');
+    if (!stage) { stage = document.createElement('div'); stage.id = 'tree3dStage'; stage.className = 'tree-3d-stage'; $('#canvasWrap').appendChild(stage); }
+    stage.innerHTML = '';
+    const layout = layoutTools.computeTreeLayout(projected.persons, projected.relationships, { cardWidth: 190, cardHeight: 92, spouseGap: 32, horizontalGap: 66, verticalGap: 90 });
+    const scene = document.createElement('div'); scene.className = 'tree-3d-scene'; stage.appendChild(scene);
+    projected.persons.forEach(person => { const at=layout.personPos.get(Number(person.id)); if(!at)return; const card=document.createElement('button'); card.type='button'; card.className='tree-3d-card'; card.dataset.personId=person.id; card.style.left=at.x+'px'; card.style.top=at.y+'px'; card.innerHTML='<span class=tree-3d-avatar>'+escapeHtml(initials(person))+'</span><strong>'+escapeHtml(personName(person))+'</strong><small>'+escapeHtml(lifeYears(person))+'</small>'; card.onclick=()=>state.host.openPerson?.(Number(person.id)); scene.appendChild(card); });
+  }
+
   function render() {
     if (!state.initialized || !state.graph) return;
     updateControls();
     const projected = projectionFor();
     setResultCount(projected.persons.length);
     if (state.view === 'family') {
+      if (state.presentation === '3d') { render3D(projected); return; }
+      $('#tree3dStage')?.remove(); $('#treeSvg')?.classList.remove('hidden');
       showAlt(false);
       state.exportSvg = '';
       state.host.renderProjection?.(projected);
@@ -628,6 +641,7 @@
   }
 
   function bindControls() {
+    const modeButton = document.createElement('button'); modeButton.type='button'; modeButton.id='explorer3dToggle'; modeButton.className='explorer-icon-button'; modeButton.textContent='3D view'; modeButton.setAttribute('aria-pressed','false'); document.querySelector('.explorer-output-controls')?.prepend(modeButton); modeButton.addEventListener('click',()=>{state.presentation=state.presentation==='3d'?'2d':'3d';modeButton.textContent=state.presentation==='3d'?'2D view':'3D view';modeButton.setAttribute('aria-pressed',String(state.presentation==='3d'));render();});
     $$('.explorer-view-button').forEach((button) => button.addEventListener('click', () => setView(button.dataset.explorerView)));
     $('#explorerFocusPerson')?.addEventListener('change', (event) => { state.focusId = Number(event.target.value); render(); });
     $('#explorerDepth')?.addEventListener('change', (event) => { state.depth = event.target.value === 'all' ? Infinity : Number(event.target.value); render(); });
