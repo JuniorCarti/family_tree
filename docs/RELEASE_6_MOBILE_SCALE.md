@@ -106,4 +106,4 @@ Release 6 was published to Firebase Hosting on 2026-08-06 from implementation co
 
 ## Deliberate boundaries
 
-Release 6 optimizes layout calculation and interaction but still renders each visible family member as an SVG `foreignObject`. Extremely large archives may eventually benefit from viewport virtualization or a canvas/WebGL renderer. That larger rendering architecture is not required for the current 5,000-person layout contract and should only be introduced with matching accessibility behavior.
+This foundation originally retained one SVG `foreignObject` per visible family member. The companion [Complete Tree Exploration release](RELEASE_6_EXPLORATION.md) now closes that boundary with viewport virtualization, a distant-zoom dot layer, focused server slices, a minimap, alternate views, exports, mapping, and expiring private presentation links.

@@ -212,5 +212,259 @@
     };
   }
 
-  return { computeTreeLayout };
+  function buildRelationshipGraph(persons, relationships) {
+    const personById = new Map(persons.map((person) => [Number(person.id), person]));
+    const parents = new Map();
+    const children = new Map();
+    const spouses = new Map();
+    const neighbors = new Map();
+    for (const id of personById.keys()) {
+      parents.set(id, []);
+      children.set(id, []);
+      spouses.set(id, []);
+      neighbors.set(id, []);
+    }
+
+    function connect(map, from, to) {
+      if (!map.has(from) || !personById.has(to) || map.get(from).includes(to)) return;
+      map.get(from).push(to);
+    }
+
+    for (const relationship of relationships) {
+      const first = Number(relationship.person1_id);
+      const second = Number(relationship.person2_id);
+      if (!personById.has(first) || !personById.has(second) || first === second) continue;
+      if (relationship.type === 'parent') {
+        connect(children, first, second);
+        connect(parents, second, first);
+      }
+      if (relationship.type === 'spouse') {
+        connect(spouses, first, second);
+        connect(spouses, second, first);
+      }
+      neighbors.get(first).push({ id: second, relationship, forward: true });
+      neighbors.get(second).push({ id: first, relationship, forward: false });
+    }
+    return { personById, parents, children, spouses, neighbors };
+  }
+
+  function deriveRelationshipFacts(persons, relationships) {
+    const graph = buildRelationshipGraph(persons, relationships);
+    const personById = graph.personById;
+    const explicitKeys = new Set();
+    const inferredKeys = new Set();
+    const inferred = [];
+
+    function symmetricKey(type, first, second) {
+      const pair = [Number(first), Number(second)].sort((a, b) => a - b);
+      const family = type === 'grandchild' ? 'grandparent'
+        : type === 'niece_nephew' ? 'aunt_uncle' : type;
+      return `${family}:${pair[0]}:${pair[1]}`;
+    }
+
+    function relationshipKey(relationship) {
+      if (['spouse', 'sibling', 'grandparent', 'grandchild', 'aunt_uncle', 'niece_nephew', 'cousin', 'relative'].includes(relationship.type)) {
+        return symmetricKey(relationship.type, relationship.person1_id, relationship.person2_id);
+      }
+      return `parent:${Number(relationship.person1_id)}:${Number(relationship.person2_id)}`;
+    }
+
+    for (const relationship of relationships) {
+      explicitKeys.add(relationshipKey(relationship));
+    }
+
+    function add(first, second, type, label) {
+      const firstId = Number(first);
+      const secondId = Number(second);
+      if (firstId === secondId || !personById.has(firstId) || !personById.has(secondId)) return;
+      const key = symmetricKey(type, firstId, secondId);
+      if (explicitKeys.has(key) || inferredKeys.has(key)) return;
+      inferredKeys.add(key);
+      inferred.push({
+        id: null,
+        inferred: true,
+        inferred_key: key,
+        type,
+        person1_id: personById.get(firstId).id,
+        person2_id: personById.get(secondId).id,
+        label,
+      });
+    }
+
+    for (const [personId, parents] of graph.parents.entries()) {
+      for (const parentId of parents) {
+        for (const siblingId of graph.children.get(parentId) || []) {
+          if (siblingId !== personId) add(personId, siblingId, 'sibling', 'Sibling of');
+        }
+      }
+    }
+
+    for (const [personId, parents] of graph.parents.entries()) {
+      for (const parentId of parents) {
+        for (const grandparentId of graph.parents.get(parentId) || []) {
+          add(grandparentId, personId, 'grandparent', 'Grandparent of');
+        }
+      }
+    }
+
+    for (const [personId, parents] of graph.parents.entries()) {
+      for (const parentId of parents) {
+        for (const grandparentId of graph.parents.get(parentId) || []) {
+          for (const siblingId of graph.children.get(grandparentId) || []) {
+            if (siblingId === parentId) continue;
+            add(siblingId, personId, 'aunt_uncle', 'Aunt/Uncle of');
+            for (const cousinId of graph.children.get(siblingId) || []) {
+              if (cousinId !== personId) add(personId, cousinId, 'cousin', 'Cousin of');
+            }
+          }
+        }
+      }
+    }
+
+    return inferred;
+  }
+
+  function withDerivedRelationships(persons, relationships) {
+    return [...relationships, ...deriveRelationshipFacts(persons, relationships)];
+  }
+
+  function collectDirectionalIds(graph, focusId, direction = 'family', depth = 4, collapsedIds = []) {
+    const startId = Number(focusId);
+    if (!graph.personById.has(startId)) return new Set();
+    const maxDepth = depth === 'all' ? Number.POSITIVE_INFINITY : Math.max(0, Number(depth) || 0);
+    const collapsed = new Set([...collapsedIds].map(Number));
+    const collected = new Set([startId]);
+
+    function traverse(nextFor) {
+      const visitedDepth = new Map([[startId, 0]]);
+      const queue = [startId];
+      for (let cursor = 0; cursor < queue.length; cursor++) {
+        const current = queue[cursor];
+        const currentDepth = visitedDepth.get(current);
+        if (currentDepth >= maxDepth || collapsed.has(current)) continue;
+        for (const nextId of nextFor(current)) {
+          const nextDepth = currentDepth + 1;
+          if ((visitedDepth.get(nextId) ?? Number.POSITIVE_INFINITY) <= nextDepth) continue;
+          visitedDepth.set(nextId, nextDepth);
+          collected.add(nextId);
+          queue.push(nextId);
+        }
+      }
+    }
+
+    if (direction === 'ancestors' || direction === 'hourglass') traverse((id) => graph.parents.get(id) || []);
+    if (direction === 'descendants' || direction === 'hourglass') traverse((id) => graph.children.get(id) || []);
+    if (direction === 'family') traverse((id) => (graph.neighbors.get(id) || []).map((item) => item.id));
+
+    for (const id of [...collected]) {
+      for (const spouseId of graph.spouses.get(id) || []) collected.add(spouseId);
+    }
+    return collected;
+  }
+
+  function projectTree(persons, relationships, options = {}) {
+    const enrichedRelationships = withDerivedRelationships(persons, relationships);
+    const graph = options.graph || buildRelationshipGraph(persons, enrichedRelationships);
+    let ids;
+    if (options.focusId) {
+      ids = collectDirectionalIds(
+        graph,
+        options.focusId,
+        options.direction || 'family',
+        options.depth ?? 4,
+        options.collapsedIds || [],
+      );
+    } else {
+      ids = new Set(graph.personById.keys());
+      const collapsed = new Set((options.collapsedIds || []).map(Number));
+      for (const collapsedId of collapsed) {
+        const descendants = collectDirectionalIds(graph, collapsedId, 'descendants', 'all', []);
+        descendants.delete(collapsedId);
+        for (const descendantId of descendants) ids.delete(descendantId);
+      }
+    }
+    const projectedPeople = persons.filter((person) => ids.has(Number(person.id)));
+    const projectedRelationships = enrichedRelationships.filter((relationship) => (
+      ids.has(Number(relationship.person1_id)) && ids.has(Number(relationship.person2_id))
+    ));
+    return { persons: projectedPeople, relationships: projectedRelationships, ids, graph };
+  }
+
+  function shortestRelationshipPath(persons, relationships, fromId, toId, maxHops = 30) {
+    const graph = buildRelationshipGraph(persons, withDerivedRelationships(persons, relationships));
+    const startId = Number(fromId);
+    const targetId = Number(toId);
+    if (!graph.personById.has(startId) || !graph.personById.has(targetId)) return null;
+    if (startId === targetId) return { people: [graph.personById.get(startId)], steps: [] };
+    const previous = new Map();
+    const depths = new Map([[startId, 0]]);
+    const queue = [startId];
+    for (let cursor = 0; cursor < queue.length; cursor++) {
+      const current = queue[cursor];
+      const currentDepth = depths.get(current);
+      if (currentDepth >= maxHops) continue;
+      for (const edge of graph.neighbors.get(current) || []) {
+        if (depths.has(edge.id)) continue;
+        depths.set(edge.id, currentDepth + 1);
+        previous.set(edge.id, { personId: current, edge });
+        if (edge.id === targetId) {
+          cursor = queue.length;
+          break;
+        }
+        queue.push(edge.id);
+      }
+    }
+    if (!previous.has(targetId)) return null;
+    const personIds = [targetId];
+    const steps = [];
+    let cursorId = targetId;
+    while (cursorId !== startId) {
+      const entry = previous.get(cursorId);
+      steps.push({
+        from_id: entry.personId,
+        to_id: cursorId,
+        relationship: entry.edge.relationship,
+        forward: entry.edge.forward,
+      });
+      cursorId = entry.personId;
+      personIds.push(cursorId);
+    }
+    personIds.reverse();
+    steps.reverse();
+    return { people: personIds.map((id) => graph.personById.get(id)), steps };
+  }
+
+  function ancestorSlots(persons, relationships, focusId, depth = 5) {
+    const graph = buildRelationshipGraph(persons, relationships);
+    const levels = [[graph.personById.has(Number(focusId)) ? Number(focusId) : null]];
+    const maxDepth = Math.max(1, Math.min(Number(depth) || 5, 8));
+    for (let generation = 1; generation <= maxDepth; generation++) {
+      const level = [];
+      for (const childId of levels[generation - 1]) {
+        if (!childId) {
+          level.push(null, null);
+          continue;
+        }
+        const orderedParents = [...(graph.parents.get(childId) || [])].sort((first, second) => {
+          const genderRank = (id) => graph.personById.get(id)?.gender === 'male' ? 0
+            : graph.personById.get(id)?.gender === 'female' ? 1 : 2;
+          return genderRank(first) - genderRank(second) || first - second;
+        });
+        level.push(orderedParents[0] || null, orderedParents[1] || null);
+      }
+      levels.push(level);
+    }
+    return { levels, graph };
+  }
+
+  return {
+    computeTreeLayout,
+    buildRelationshipGraph,
+    deriveRelationshipFacts,
+    withDerivedRelationships,
+    collectDirectionalIds,
+    projectTree,
+    shortestRelationshipPath,
+    ancestorSlots,
+  };
 }));

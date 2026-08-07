@@ -3,7 +3,7 @@ const db = require('./db');
 const privacyAccess = require('./privacy-access');
 const trustAccess = require('./trust-access');
 
-const EVENT_TYPES = new Set(['birth', 'education', 'marriage', 'work', 'migration', 'milestone', 'death', 'other']);
+const EVENT_TYPES = new Set(['birth', 'education', 'marriage', 'residence', 'work', 'migration', 'milestone', 'death', 'other']);
 const VISIBILITIES = new Set(['family', 'contributors', 'admins', 'private']);
 const ROLE_LEVEL = privacyAccess.ROLE_LEVEL;
 
@@ -67,7 +67,9 @@ async function initializeArchive() {
       )
     `);
     await client.query("ALTER TABLE life_events DROP CONSTRAINT IF EXISTS life_events_event_type_check");
-    await client.query("ALTER TABLE life_events ADD CONSTRAINT life_events_event_type_check CHECK (event_type IN ('birth','education','marriage','work','migration','milestone','death','other')) NOT VALID");
+    await client.query('ALTER TABLE life_events ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION');
+    await client.query('ALTER TABLE life_events ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION');
+    await client.query("ALTER TABLE life_events ADD CONSTRAINT life_events_event_type_check CHECK (event_type IN ('birth','education','marriage','residence','work','migration','milestone','death','other')) NOT VALID");
     await client.query("ALTER TABLE life_events DROP CONSTRAINT IF EXISTS life_events_visibility_check");
     await client.query("ALTER TABLE life_events ADD CONSTRAINT life_events_visibility_check CHECK (visibility IN ('family','contributors','admins','private')) NOT VALID");
     await client.query("ALTER TABLE family_stories DROP CONSTRAINT IF EXISTS family_stories_visibility_check");
@@ -112,6 +114,15 @@ function optionalText(value, maxLength, label) {
   const text = String(value ?? '').trim();
   if (text.length > maxLength) throw httpError(400, `${label} must be under ${maxLength.toLocaleString()} characters`);
   return text || null;
+}
+
+function optionalCoordinate(value, minimum, maximum, label) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < minimum || number > maximum) {
+    throw httpError(400, `${label} must be between ${minimum} and ${maximum}`);
+  }
+  return number;
 }
 
 function hasVisibility(visibility, creatorId, userId, role) {
@@ -174,6 +185,8 @@ function serializeEvent(event, userId, role) {
     event_date: event.event_date,
     end_date: event.end_date,
     place: event.place,
+    latitude: event.latitude,
+    longitude: event.longitude,
     description: event.description,
     source_title: event.source_title,
     source_url: event.source_url,
@@ -309,13 +322,15 @@ function registerRoutes(app) {
       const result = await db.query(`
         INSERT INTO life_events
           (family_id, person_id, event_type, title, event_date, end_date, place, description,
-           source_title, source_url, visibility, created_by_user_id)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *
+           source_title, source_url, visibility, created_by_user_id, latitude, longitude)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *
       `, [req.family.id, person.id, eventType, title, optionalText(req.body.event_date, 50, 'Event date'),
         optionalText(req.body.end_date, 50, 'End date'), optionalText(req.body.place, 255, 'Place'),
         optionalText(req.body.description, 10000, 'Description'),
         optionalText(req.body.source_title, 255, 'Source title'),
-        validateUrl(String(req.body.source_url || '').trim()), visibility, req.session.userId]);
+        validateUrl(String(req.body.source_url || '').trim()), visibility, req.session.userId,
+        optionalCoordinate(req.body.latitude, -90, 90, 'Latitude'),
+        optionalCoordinate(req.body.longitude, -180, 180, 'Longitude')]);
       await trustAccess.audit(req, 'archive.event_created', 'life_event', result.rows[0].id, null, result.rows[0]);
       const rows = await listEvents({ ...req, query: { person_id: person.id } });
       res.status(201).json(rows.find((event) => event.id === result.rows[0].id));
@@ -335,13 +350,16 @@ function registerRoutes(app) {
       if (!title || title.length > 180) throw httpError(400, 'Event title is required and must be under 180 characters');
       const result = await db.query(`
         UPDATE life_events SET event_type=$1,title=$2,event_date=$3,end_date=$4,place=$5,
-          description=$6,source_title=$7,source_url=$8,visibility=$9,updated_at=now()
-        WHERE id=$10 AND family_id=$11 AND deleted_at IS NULL RETURNING *
+          description=$6,source_title=$7,source_url=$8,visibility=$9,latitude=$10,
+          longitude=$11,updated_at=now()
+        WHERE id=$12 AND family_id=$13 AND deleted_at IS NULL RETURNING *
       `, [merged.event_type, title, optionalText(merged.event_date, 50, 'Event date'),
         optionalText(merged.end_date, 50, 'End date'), optionalText(merged.place, 255, 'Place'),
         optionalText(merged.description, 10000, 'Description'),
         optionalText(merged.source_title, 255, 'Source title'),
-        validateUrl(String(merged.source_url || '').trim()), merged.visibility, existing.id, req.family.id]);
+        validateUrl(String(merged.source_url || '').trim()), merged.visibility,
+        optionalCoordinate(merged.latitude, -90, 90, 'Latitude'),
+        optionalCoordinate(merged.longitude, -180, 180, 'Longitude'), existing.id, req.family.id]);
       await trustAccess.audit(req, 'archive.event_updated', 'life_event', existing.id, existing, result.rows[0]);
       res.json({ success: true });
     } catch (error) { res.status(error.status || 500).json({ error: error.message }); }

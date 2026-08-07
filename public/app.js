@@ -16,6 +16,7 @@ let state = {
   persons: [],
   personIndex: new Map(),
   relationships: [],
+  projection: null,
   tree: null,
   layout: null,
   positionedTreeId: null,
@@ -23,6 +24,7 @@ let state = {
   zoom: 1,
   panX: 0,
   panY: 0,
+  showKinshipLines: false,
 };
 
 // ------------------------------------------------------------------ helpers
@@ -56,6 +58,14 @@ function initials(p) {
 let currentUser = null;
 
 async function api(path, opts = {}) {
+  const method = String(opts.method || 'GET').toUpperCase();
+  if (!navigator.onLine && method !== 'GET') {
+    const queue = JSON.parse(localStorage.getItem('lineage-offline-queue') || '[]');
+    queue.push({ path, method, body: opts.body || null, queued_at: new Date().toISOString() });
+    localStorage.setItem('lineage-offline-queue', JSON.stringify(queue));
+    document.body.classList.add('offline-mode');
+    return { queued: true, offline: true };
+  }
   const res = await fetch(`${API}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...opts,
@@ -77,16 +87,33 @@ async function api(path, opts = {}) {
 // ------------------------------------------------------------------ data load
 async function loadTree() {
   const data = await api('/tree');
+  window.LineageExplorer?.configureHost({
+    api: (path, options) => api(String(path).replace(/^\/api/, ''), options),
+    hasFamilyRole,
+    renderProjection(projected) {
+      state.projection = projected;
+      state.layout = null;
+      render();
+    },
+    openPerson(id) {
+      selectPerson(id);
+    },
+  });
   const shouldFitOnMobile = state.positionedTreeId !== data.tree?.id;
   state.persons = data.persons;
   state.personIndex = new Map(data.persons.map((person) => [person.id, person]));
   state.relationships = data.relationships;
+  state.projection = { persons: data.persons, relationships: data.relationships };
   state.tree = data.tree;
   state.layout = null;
   $('#treeName').value = data.tree?.name || 'My Family Tree';
   $('#treeName').readOnly = !hasFamilyRole('admin');
   $('#personCount').textContent = `${state.persons.length} ${state.persons.length === 1 ? 'person' : 'people'}`;
-  render();
+  if (window.LineageExplorer) {
+    window.LineageExplorer.setData({ persons: data.persons, relationships: data.relationships });
+  } else {
+    render();
+  }
   if (shouldFitOnMobile && window.matchMedia('(max-width: 900px)').matches) fitTreeToViewport();
   state.positionedTreeId = data.tree?.id || null;
   await window.loadArchiveOverview?.();
@@ -245,7 +272,8 @@ function buildMaps() {
 // ------------------------------------------------------------------ layout (positions in px)
 function computeLayout() {
   if (!state.layout) {
-    state.layout = window.LineageTreeLayout.computeTreeLayout(state.persons, state.relationships, {
+    const projected = state.projection || { persons: state.persons, relationships: state.relationships };
+    state.layout = window.LineageTreeLayout.computeTreeLayout(projected.persons, projected.relationships, {
       cardWidth: CARD_W,
       cardHeight: CARD_H,
       spouseGap: SPOUSE_GAP,
@@ -259,7 +287,21 @@ function computeLayout() {
 
 // ------------------------------------------------------------------ rendering
 function render() {
-  const hasPeople = state.persons.length > 0;
+  const projected = state.projection || { persons: state.persons, relationships: state.relationships };
+  const renderedPersons = projected.persons;
+  const renderedRelationships = projected.relationships;
+  const kinshipToggle = $('#explorerKinshipToggle');
+  const relationLegend = $('#relLegend');
+  relationLegend?.classList.toggle('kinship-overview-active', state.showKinshipLines);
+  if (kinshipToggle) {
+    kinshipToggle.classList.toggle('active', state.showKinshipLines);
+    kinshipToggle.setAttribute('aria-pressed', String(state.showKinshipLines));
+    kinshipToggle.textContent = state.showKinshipLines ? 'Hide kinship' : 'Kinship links';
+    kinshipToggle.title = state.selectedId
+      ? 'Show or hide inferred kinship links connected to the selected person'
+      : 'Select a person first to show focused inferred kinship links';
+  }
+  const hasPeople = renderedPersons.length > 0;
   $('#emptyState').classList.toggle('hidden', hasPeople);
   if (!hasPeople) {
     $('#treeSvg').innerHTML = '';
@@ -283,13 +325,48 @@ function render() {
   const cardLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   g.appendChild(cardLayer);
 
+  const largeTree = renderedPersons.length > 300;
+  let visibleIds = new Set(renderedPersons.map((person) => person.id));
+  if (largeTree && state.zoom >= 0.075) {
+    const rect = canvasWrap.getBoundingClientRect();
+    const overscan = 420 / state.zoom;
+    const left = -state.panX / state.zoom - overscan;
+    const top = -state.panY / state.zoom - overscan;
+    const right = (rect.width - state.panX) / state.zoom + overscan;
+    const bottom = (rect.height - state.panY) / state.zoom + overscan;
+    visibleIds = new Set(renderedPersons.filter((person) => {
+      const at = layout.personPos.get(person.id);
+      return at && at.x + at.w >= left && at.x <= right && at.y + at.h >= top && at.y <= bottom;
+    }).map((person) => person.id));
+  }
+
+  if (largeTree && state.zoom < 0.075) {
+    cardLayer.setAttribute('class', 'tree-density-layer');
+    for (const person of renderedPersons) {
+      const at = layout.personPos.get(person.id);
+      if (!at) continue;
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('cx', at.x + at.w / 2);
+      dot.setAttribute('cy', at.y + at.h / 2);
+      dot.setAttribute('r', 7);
+      dot.setAttribute('fill', person.gender === 'female' ? '#a26770' : person.gender === 'male' ? '#416d5c' : '#8d7449');
+      cardLayer.appendChild(dot);
+    }
+    renderMinimap(layout, renderedPersons);
+    return;
+  }
+
   // ---- extended connectors (siblings, grandparents, relatives, etc) ----
-  for (const r of state.relationships) {
+  for (const r of renderedRelationships) {
+    if (!visibleIds.has(r.person1_id) && !visibleIds.has(r.person2_id)) continue;
+    if (!state.showKinshipLines) continue;
     if (['relative', 'sibling', 'grandparent', 'grandchild', 'aunt_uncle', 'niece_nephew', 'cousin'].includes(r.type)) {
+      if (!state.selectedId
+        || (Number(r.person1_id) !== Number(state.selectedId) && Number(r.person2_id) !== Number(state.selectedId))) continue;
       const a = layout.personPos.get(r.person1_id);
       const b = layout.personPos.get(r.person2_id);
       if (a && b) {
-        drawArc(connLayer, a.x + a.w / 2, a.y + a.h / 2, b.x + b.w / 2, b.y + b.h / 2, r.type);
+        drawArc(connLayer, a.x + a.w / 2, a.y + a.h / 2, b.x + b.w / 2, b.y + b.h / 2, r.type, r.inferred);
       }
     }
   }
@@ -300,6 +377,7 @@ function render() {
     for (let i = 0; i < u.members.length - 1; i++) {
       const a = layout.personPos.get(u.members[i]);
       const b = layout.personPos.get(u.members[i + 1]);
+      if (!visibleIds.has(u.members[i]) && !visibleIds.has(u.members[i + 1])) continue;
       const y = a.y + a.h / 2;
       drawLine(connLayer, a.x + a.w, y, b.x, y, 'spouse');
     }
@@ -308,12 +386,15 @@ function render() {
   // ---- parent-child connectors (unit to unit, elbow style) ----
   for (const [uid, childSet] of layout.unitChildren.entries()) {
     const pUnit = layout.units.get(uid);
+    if (!pUnit) continue;
     const pMembers = pUnit.members.map((m) => layout.personPos.get(m));
     const pxCenter = layout.unitX.get(uid);
     const pyBottom = Math.max(...pMembers.map((m) => m.y + m.h));
 
     for (const cuid of childSet) {
       const cUnit = layout.units.get(cuid);
+      if (!cUnit) continue;
+      if (![...pUnit.members, ...cUnit.members].some((id) => visibleIds.has(id))) continue;
       const cMembers = cUnit.members.map((m) => layout.personPos.get(m));
       const cxCenter = layout.unitX.get(cuid);
       const cyTop = Math.min(...cMembers.map((m) => m.y));
@@ -323,11 +404,13 @@ function render() {
   }
 
   // ---- cards ----
-  for (const p of state.persons) {
+  for (const p of renderedPersons) {
+    if (!visibleIds.has(p.id)) continue;
     const pos = layout.personPos.get(p.id);
     if (!pos) continue;
     cardLayer.appendChild(makeCardNode(p, pos));
   }
+  renderMinimap(layout, renderedPersons);
 }
 
 // Colour + dash palette keyed by relationship type
@@ -343,7 +426,7 @@ const REL_STYLE = {
   relative: { stroke: '#94a3b8', width: 1.8, dash: '4,6' },
 };
 
-function drawArc(layer, x1, y1, x2, y2, kind) {
+function drawArc(layer, x1, y1, x2, y2, kind, inferred = false) {
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
 
   // Decide how far up/down the arc should bow based on horizontal distance
@@ -363,6 +446,12 @@ function drawArc(layer, x1, y1, x2, y2, kind) {
   path.setAttribute('stroke', s.stroke);
   path.setAttribute('stroke-width', s.width);
   if (s.dash) path.setAttribute('stroke-dasharray', s.dash);
+  if (inferred) {
+    path.classList.add('inferred-relationship');
+    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    title.textContent = `${kind.replace(/_/g, ' ')} · inferred from recorded family links`;
+    path.appendChild(title);
+  }
   layer.appendChild(path);
 }
 
@@ -445,6 +534,7 @@ function selectPerson(id) {
   state.selectedId = id;
   syncSelectedCard(id);
   openSidePanel(id);
+  render();
 }
 
 function syncSelectedCard(selectedId) {
@@ -453,9 +543,18 @@ function syncSelectedCard(selectedId) {
   }
 }
 
+function positionSidePanel() {
+  const canvas = $('#canvasWrap');
+  const panel = $('#sidePanel');
+  if (!canvas || !panel) return;
+  const top = Math.max(0, Math.round(canvas.getBoundingClientRect().top));
+  panel.style.setProperty('--detail-panel-top', `${top}px`);
+}
+
 function openSidePanel(id) {
   const p = personById(id);
   if (!p) return;
+  positionSidePanel();
   const {
     parentsOf, childrenOf, spousesOf,
     siblingsOf, grandparentsOf, grandchildrenOf,
@@ -512,7 +611,10 @@ function openSidePanel(id) {
     ${relSection('Siblings', siblings, id, 'sibling_of_target')}
     ${relSection('Grandparents', grandparents, id, 'grandparent_of_target')}
     ${relSection('Grandchildren', grandchildren, id, 'grandchild_of_target')}
-    ${relSection('Relatives', relatives, id, 'relative_of_target')}
+    ${relSection('Aunts / Uncles', (auntUnclesOf.get(id) || []).map(personById).filter(Boolean), id, 'relative_of_target')}
+    ${relSection('Nieces / Nephews', (nieceNephewsOf.get(id) || []).map(personById).filter(Boolean), id, 'relative_of_target')}
+    ${relSection('Cousins', (cousinsOf.get(id) || []).map(personById).filter(Boolean), id, 'relative_of_target')}
+    ${relSection('Other Relatives', relatives, id, 'relative_of_target')}
   `;
 
   $('#editPersonBtn')?.addEventListener('click', () => openPersonModal(p));
@@ -609,6 +711,7 @@ $('#closePanelBtn').addEventListener('click', () => {
   $('#sidePanel').classList.add('hidden');
   state.selectedId = null;
   syncSelectedCard(null);
+  render();
 });
 
 // ------------------------------------------------------------------ pan / zoom
@@ -617,6 +720,8 @@ const activePointers = new Map();
 let dragGesture = null;
 let pinchGesture = null;
 let transformFrame = null;
+let virtualRefreshTimer = null;
+let minimapScale = null;
 
 function applyTransformOnly() {
   if (transformFrame !== null) return;
@@ -626,7 +731,52 @@ function applyTransformOnly() {
     if (viewport) viewport.setAttribute('transform', `translate(${state.panX},${state.panY}) scale(${state.zoom})`);
     const zoomLabel = $('#treeZoomLabel');
     if (zoomLabel) zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
+    updateMinimapViewport();
+    const projectedCount = state.projection?.persons?.length || state.persons.length;
+    if (projectedCount > 300) {
+      clearTimeout(virtualRefreshTimer);
+      virtualRefreshTimer = setTimeout(render, 90);
+    }
   });
+}
+
+function renderMinimap(layout, people) {
+  const minimap = $('#treeMinimap');
+  const svg = $('#treeMinimapSvg');
+  if (!minimap || !svg) return;
+  minimap.classList.toggle('hidden', people.length < 2);
+  if (people.length < 2) return;
+  const width = 180;
+  const height = 112;
+  const inset = 7;
+  const scale = Math.min((width - inset * 2) / Math.max(layout.width, 1), (height - inset * 2) / Math.max(layout.height, 1));
+  const offsetX = (width - layout.width * scale) / 2;
+  const offsetY = (height - layout.height * scale) / 2;
+  minimapScale = { scale, offsetX, offsetY, layout };
+  const points = people.map((person) => {
+    const at = layout.personPos.get(person.id);
+    if (!at) return '';
+    const x = offsetX + (at.x + at.w / 2) * scale;
+    const y = offsetY + (at.y + at.h / 2) * scale;
+    return `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${people.length > 500 ? 1 : 1.7}" />`;
+  }).join('');
+  svg.innerHTML = `<rect class="minimap-paper" width="180" height="112" rx="7"/><g class="minimap-people">${points}</g><rect id="treeMinimapViewport" class="minimap-viewport" rx="3"/>`;
+  if ($('#treeMinimapCount')) $('#treeMinimapCount').textContent = `${people.length} people`;
+  updateMinimapViewport();
+}
+
+function updateMinimapViewport() {
+  const viewport = $('#treeMinimapViewport');
+  if (!viewport || !minimapScale || !state.zoom) return;
+  const rect = canvasWrap.getBoundingClientRect();
+  const worldLeft = -state.panX / state.zoom;
+  const worldTop = -state.panY / state.zoom;
+  const worldWidth = rect.width / state.zoom;
+  const worldHeight = rect.height / state.zoom;
+  viewport.setAttribute('x', Math.max(0, minimapScale.offsetX + worldLeft * minimapScale.scale));
+  viewport.setAttribute('y', Math.max(0, minimapScale.offsetY + worldTop * minimapScale.scale));
+  viewport.setAttribute('width', Math.min(180, Math.max(5, worldWidth * minimapScale.scale)));
+  viewport.setAttribute('height', Math.min(112, Math.max(5, worldHeight * minimapScale.scale)));
 }
 
 function clampZoom(zoom) {
@@ -763,6 +913,23 @@ $('#resetViewBtn').addEventListener('click', fitTreeToViewport);
 $('#treeZoomInBtn').addEventListener('click', () => zoomFromViewportCenter(1));
 $('#treeZoomOutBtn').addEventListener('click', () => zoomFromViewportCenter(-1));
 $('#fitTreeBtn').addEventListener('click', fitTreeToViewport);
+$('#explorerKinshipToggle')?.addEventListener('click', () => {
+  if (!state.selectedId) return;
+  state.showKinshipLines = !state.showKinshipLines;
+  render();
+});
+$('#treeMinimapSvg')?.addEventListener('click', (event) => {
+  if (!minimapScale) return;
+  const box = event.currentTarget.getBoundingClientRect();
+  const mapX = (event.clientX - box.left) * 180 / box.width;
+  const mapY = (event.clientY - box.top) * 112 / box.height;
+  const worldX = (mapX - minimapScale.offsetX) / minimapScale.scale;
+  const worldY = (mapY - minimapScale.offsetY) / minimapScale.scale;
+  const canvas = canvasWrap.getBoundingClientRect();
+  state.panX = canvas.width / 2 - worldX * state.zoom;
+  state.panY = canvas.height / 2 - worldY * state.zoom;
+  applyTransformOnly();
+});
 
 canvasWrap.addEventListener('wheel', (e) => {
   e.preventDefault();
@@ -1082,6 +1249,7 @@ function queueTreeViewportResize() {
   viewportResizeFrame = requestAnimationFrame(() => {
     viewportResizeFrame = null;
     syncTreeViewportSize();
+    positionSidePanel();
   });
 }
 window.addEventListener('resize', queueTreeViewportResize, { passive: true });
@@ -1098,6 +1266,7 @@ const startupParams = new URLSearchParams(window.location.search);
 const inviteToken = startupParams.get('invite');
 const verificationToken = startupParams.get('verify');
 const resetToken = startupParams.get('reset');
+const shareToken = startupParams.get('share');
 let invitationInfo = null;
 let isLoginMode = true;
 
@@ -1804,6 +1973,10 @@ $('#deleteAccountForm').addEventListener('submit', async (event) => {
 });
 
 async function initializeApp() {
+  if (shareToken && window.LineageExplorer) {
+    await window.LineageExplorer.loadSharedTree(shareToken);
+    return;
+  }
   await loadInvitationNotice();
   if (resetToken) {
     $('#app').classList.add('hidden');

@@ -1,0 +1,183 @@
+# Release 6: Complete Tree Exploration
+
+This release completes the exploration system around the mobile and scale foundation in [Release 6: Mobile Tree and Scale](RELEASE_6_MOBILE_SCALE.md). A family is no longer limited to one large diagram: members can move between purpose-built views, isolate a branch, find a relationship, present a tree, print it, map family movement, or share a read-only view without sharing an account.
+
+## What family members can explore
+
+The tree toolbar provides eight views:
+
+| View | Best use |
+| --- | --- |
+| Family | Browse the complete connected record with interactive cards |
+| Pedigree | Follow the selected person's ancestors |
+| Descendants | Follow children and later generations from one person |
+| Fan | Scan up to six ancestor generations in a semicircular chart |
+| Hourglass | See ancestors and descendants around one focus person |
+| Compact list | Search a dense alphabetical directory |
+| Relationship path | Find the shortest recorded connection between two relatives |
+| Places | Map geocoded births, marriages, residences, migrations, and other events |
+
+The focus selector changes the person at the centre of directional views. Generation depth can be set from one through eight, or to all generations where the view supports it. “Focus branch” removes unrelated branches. “Collapse branch” hides descendants from the selected person, and “Expand all” restores them.
+
+Clicking a person in a chart, list, or relationship path opens the same existing profile panel. Exploration does not create a second copy of family data.
+
+The existing **Timeline** workspace remains the chronological exploration view for births, education, marriage, work, residence, migration, milestones, and deaths. The Places tab uses those same privacy-filtered events geographically.
+
+## Derived kinship
+
+The tree now derives kinship from recorded parent links across every surface. Shared parents produce inferred siblings; parent chains produce grandparents and grandchildren; a parent's siblings produce aunts/uncles and nieces/nephews; and children of those sibling branches produce cousins. These edges are included in tree lines, profile categories, relationship paths, exploration projections, and privacy-filtered exports.
+
+Derived edges carry an **inferred** marker, have no database ID, and are never silently inserted into the relationships table. An explicitly recorded relationship suppresses the matching inferred edge, so the family record stays free of duplicates. Removing or changing a parent link automatically changes the derived kinship shown by the application.
+
+To keep large trees understandable, the primary Family canvas starts with only the structural parent/child and spouse connectors. Select a person and choose **Kinship links** to reveal only that person's secondary sibling, grandparent, aunt/uncle, niece/nephew, cousin, or other-relative connectors. The profile panel remains the clearest complete list of those relationships, with inferred entries labelled as such.
+
+## Navigation and presentation
+
+- The Family view retains drag, wheel, pinch, zoom, and fit controls.
+- A clickable minimap shows the whole layout and current viewport.
+- Full-screen presentation mode removes surrounding browser distractions.
+- Alternative charts preserve readable labels with local chart scrolling on narrow phones.
+- The page remains free of horizontal overflow at 390px; controls become touch-friendly scrolling rows.
+- Reduced-motion preferences remove decorative transitions.
+
+## Large-family behaviour
+
+The browser uses three levels of work:
+
+1. Layout is calculated once and cached until projected people or relationships change.
+2. Above 300 visible people, only cards near the current viewport are created.
+3. At a distant overview zoom, SVG foreignObject cards become lightweight person dots.
+
+Pan and zoom refreshes are coalesced and delayed by 90ms for virtualized trees. The minimap still represents the complete projected result.
+
+The authenticated branch endpoint is:
+
+    GET /api/exploration/tree-slice?focus_id=123&direction=ancestors&depth=4
+
+Allowed directions are **family**, **ancestors**, **descendants**, and **hourglass**. Depth is limited to eight generations or **all**.
+
+## Family geography
+
+Life events can store optional decimal latitude and longitude. The API validates latitude from -90 to 90 and longitude from -180 to 180.
+
+The Places view plots events with coordinates and lists named places still needing coordinates. It does not send family locations to a third-party geocoder. This keeps location data inside Lineage and avoids mapping an ambiguous place name incorrectly.
+
+Residence is now a first-class event type alongside birth, education, marriage, work, migration, milestone, death, and other events.
+
+## Export and printing
+
+The Export menu supports:
+
+- high-resolution PNG generated in the browser from the current chart;
+- vector, print-ready A3 landscape PDF generated by the server;
+- the browser print workflow with an A3 landscape print stylesheet.
+
+PDF generation uses the same privacy-filtered family payload as the screen:
+
+    GET /api/exploration/chart.pdf?view=pedigree&focus_id=123&depth=4
+
+The response is an attachment and never includes a person the requesting member cannot view.
+
+## Private presentation links
+
+Family administrators and owners can create read-only links with:
+
+- a label;
+- one allowed tree view;
+- a focus person and generation depth;
+- an expiry of 24 hours, 7 days, or 30 days;
+- an explicit option to include limited living-person profiles.
+
+Living relatives are excluded by default. When an administrator opts in, viewer-level living-person redaction still applies. Fully private profiles are always removed.
+
+The 32-byte token is shown only in the generated URL. PostgreSQL stores only its SHA-256 hash. Links are rate-limited, use **Cache-Control: private, no-store**, expire automatically, and can be revoked immediately. Access updates a last-accessed timestamp.
+
+Presentation links are not family memberships. They cannot edit records, open account controls, or expose the authenticated application. Relatives who collaborate should still receive their own invited account.
+
+Endpoints:
+
+    GET    /api/shared-tree/:token
+    GET    /api/exploration/share-links
+    POST   /api/exploration/share-links
+    DELETE /api/exploration/share-links/:id
+
+Share administration requires a family administrator or owner. Creation and revocation are written to the family audit log.
+
+## Database migration
+
+Startup adds:
+
+- **family_share_links**, including token hash, family, view, focus, depth, living-person choice, expiry, revocation, access, and creator fields;
+- **life_events.latitude**;
+- **life_events.longitude**;
+- **residence** in the life-event type constraint.
+
+All changes are additive. Existing trees and events remain valid.
+
+## Security and privacy contract
+
+- Every tree, branch, PDF, event, and link is scoped to one family.
+- Profile visibility and living-person redaction run before projection.
+- A public token cannot be used on authenticated family routes.
+- Raw tokens are never returned by the administration list.
+- Revoked and expired links return 404 without disclosing their state.
+- Share responses are not publicly cacheable.
+- Only administrators and owners can create or revoke links.
+
+## Verification
+
+Syntax checks:
+
+    node --check public/tree-layout.js
+    node --check public/explorer.js
+    node --check public/app.js
+    node --check public/archive.js
+    node --check exploration-access.js
+    node --check archive-access.js
+    node --check server.js
+
+Full automated suite against disposable PostgreSQL:
+
+    npm test
+
+The suite verifies a 5,000-person layout, graph projections, fan slots, shortest paths, branch slices, coordinate persistence, token hashing, living-person exclusion and redaction, fully private profile removal, role checks, PDF generation, link listing, and revocation.
+
+Real Chrome QA covers every exploration tab, populated alternate views, the private-link modal, public presentation, 1440px desktop and 390px mobile, the mobile fit control, minimap, list search, page-level overflow, and browser runtime exceptions.
+
+## Production rollout
+
+The complete exploration system was deployed on 2026-08-06.
+
+- Implementation commit: **4a7b21b**
+- Cloud Run revision: **lineage-api-00015-n9d**
+- Cloud Run traffic: 100 percent on the new revision
+- Firebase project: **family-tree-a4c4f**
+- Live application: https://family-tree-a4c4f.web.app
+
+Cloud Run startup confirmed the PostgreSQL schema and relationship constraints, then passed its startup probe. Production smoke checks confirmed:
+
+- the hosted shell and versioned exploration assets return HTTP 200;
+- the shell references the exploration controller and matching stylesheet;
+- Firebase's API rewrite returns an anonymous session response without a 401;
+- the public presentation endpoint is reachable and returns 404 for an invalid token;
+- the new revision remains healthy after migration.
+
+## Files
+
+| File | Responsibility |
+| --- | --- |
+| public/tree-layout.js | Shared graph, projection, path, fan-slot, and layout primitives |
+| public/explorer.js | Exploration state, alternate views, export, sharing, and public presentation |
+| public/app.js | Family renderer integration, minimap, and viewport virtualization |
+| public/archive.js | Event coordinates and workspace toolbar visibility |
+| exploration-access.js | Branch slices, PDF, links, and public privacy boundary |
+| archive-access.js | Residence events and validated coordinates |
+| tests/tree-layout.test.js | Graph, scale, and frontend contracts |
+| tests/family-sharing.test.js | Privacy, sharing, map, and PDF integration |
+
+## Deliberate limits
+
+- The map is a privacy-preserving schematic world map, not turn-by-turn geography. Coordinates are entered deliberately; third-party geocoding is not enabled.
+- PNG is capped at 6,000 pixels per axis to avoid exhausting memory on low-resource devices. PDF is preferred for large-format output.
+- Fan charts display at most six generations so labels remain readable. Pedigree supports up to eight or all.
+- A share link is a current read-only presentation, not a downloadable offline archive.

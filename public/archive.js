@@ -81,6 +81,10 @@
       updateArchiveStats(data);
       if (activeView === 'timeline') await loadTimeline();
       if (activeView === 'stories') await loadStories();
+      if (activeView === 'evidence') await window.loadEvidence?.();
+      if (activeView === 'memories') await window.loadMemories?.();
+      if (activeView === 'quality') await window.loadQuality?.();
+      if (activeView === 'collaboration') await window.loadCollaboration?.();
     } catch (error) {
       console.warn('Archive overview unavailable:', error.message);
     }
@@ -96,8 +100,13 @@
       button.setAttribute('aria-selected', String(selected));
     });
     $('#canvasWrap').classList.toggle('hidden', view !== 'tree');
+    $('#explorerCommandBar')?.classList.toggle('hidden', view !== 'tree');
     $('#timelineView').classList.toggle('hidden', view !== 'timeline');
     $('#storiesView').classList.toggle('hidden', view !== 'stories');
+    $('#evidenceView').classList.toggle('hidden', view !== 'evidence');
+    $('#memoriesView').classList.toggle('hidden', view !== 'memories');
+    $('#qualityView').classList.toggle('hidden', view !== 'quality');
+    $('#collaborationView').classList.toggle('hidden', view !== 'collaboration');
     $('#sidePanel').classList.add('hidden');
     ['#zoomOutBtn', '#zoomInBtn', '#resetViewBtn', '#addPersonBtn', '#mergeBtn', '#exportBtn'].forEach((selector) => {
       $(selector).classList.toggle('hidden', view !== 'tree');
@@ -112,6 +121,10 @@
       if (options.personId) $('#storiesPersonFilter').value = String(options.personId);
       await loadStories();
     }
+    if (view === 'evidence') await window.loadEvidence?.();
+    if (view === 'memories') await window.loadMemories?.();
+    if (view === 'quality') await window.loadQuality?.();
+    if (view === 'collaboration') await window.loadCollaboration?.();
   }
   window.openTimelineForPerson = (personId) => switchArchiveView('timeline', { personId });
 
@@ -202,6 +215,8 @@
     $('#eventDate').value = event?.event_date || '';
     $('#eventEndDate').value = event?.end_date || '';
     $('#eventPlace').value = event?.place || '';
+    $('#eventLatitude').value = event?.latitude ?? '';
+    $('#eventLongitude').value = event?.longitude ?? '';
     $('#eventDescription').value = event?.description || '';
     $('#eventSourceTitle').value = event?.source_title || '';
     $('#eventSourceUrl').value = event?.source_url || '';
@@ -229,6 +244,8 @@
       event_date: $('#eventDate').value.trim() || null,
       end_date: $('#eventEndDate').value.trim() || null,
       place: $('#eventPlace').value.trim() || null,
+      latitude: $('#eventLatitude').value.trim() || null,
+      longitude: $('#eventLongitude').value.trim() || null,
       description: $('#eventDescription').value.trim() || null,
       source_title: $('#eventSourceTitle').value.trim() || null,
       source_url: $('#eventSourceUrl').value.trim() || null
@@ -236,6 +253,7 @@
     try {
       const path = editingEvent ? `/archive/events/${editingEvent.id}` : '/archive/events';
       await api(path, { method: editingEvent ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+      window.LineageExplorer?.setEvents([]);
       closeEventEditor();
       await Promise.all([loadTimeline(), loadArchiveOverview()]);
     } catch (error) {

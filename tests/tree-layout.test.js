@@ -4,7 +4,15 @@ const path = require('node:path');
 const test = require('node:test');
 const { performance } = require('node:perf_hooks');
 
-const { computeTreeLayout } = require('../public/tree-layout');
+const {
+  computeTreeLayout,
+  buildRelationshipGraph,
+  deriveRelationshipFacts,
+  withDerivedRelationships,
+  projectTree,
+  shortestRelationshipPath,
+  ancestorSlots,
+} = require('../public/tree-layout');
 
 function person(id) {
   return { id, first_name: id, last_name: 'Family' };
@@ -76,4 +84,133 @@ test('mobile tree source keeps resize cheap and enables native pointer gestures'
   assert.match(appSource, /visualViewport\?\.addEventListener\('resize', queueTreeViewportResize/);
   assert.doesNotMatch(appSource, /addEventListener\('resize', \(\) => render\(\)\)/);
   assert.match(cssSource, /touch-action:\s*none/);
+});
+
+test('projects pedigree, descendant, hourglass, and collapsed family branches', () => {
+  const persons = [1, 2, 3, 4, 5, 6].map(person);
+  const relationships = [
+    { id: 1, type: 'parent', person1_id: 1, person2_id: 2 },
+    { id: 2, type: 'parent', person1_id: 2, person2_id: 3 },
+    { id: 3, type: 'spouse', person1_id: 3, person2_id: 6 },
+    { id: 4, type: 'parent', person1_id: 3, person2_id: 4 },
+    { id: 5, type: 'parent', person1_id: 4, person2_id: 5 },
+  ];
+  const graph = buildRelationshipGraph(persons, relationships);
+
+  assert.deepEqual(
+    [...projectTree(persons, relationships, { graph, focusId: 3, direction: 'ancestors', depth: 2 }).ids].sort(),
+    [1, 2, 3, 6],
+  );
+  assert.deepEqual(
+    [...projectTree(persons, relationships, { graph, focusId: 3, direction: 'descendants', depth: 1 }).ids].sort(),
+    [3, 4, 6],
+  );
+  assert.equal(projectTree(persons, relationships, {
+    graph,
+    focusId: 3,
+    direction: 'hourglass',
+    depth: 2,
+    collapsedIds: [4],
+  }).ids.has(5), false);
+});
+
+test('finds the shortest relationship path and preserves its relationship edges', () => {
+  const persons = [1, 2, 3, 4].map(person);
+  const relationships = [
+    { id: 1, type: 'parent', person1_id: 1, person2_id: 2 },
+    { id: 2, type: 'spouse', person1_id: 2, person2_id: 3 },
+    { id: 3, type: 'sibling', person1_id: 3, person2_id: 4 },
+    { id: 4, type: 'relative', person1_id: 1, person2_id: 4 },
+  ];
+
+  const pathResult = shortestRelationshipPath(persons, relationships, 2, 4);
+
+  assert.deepEqual(pathResult.people.map((item) => item.id), [2, 1, 4]);
+  assert.deepEqual(pathResult.steps.map((step) => step.relationship.id), [1, 4]);
+});
+
+test('builds deterministic binary ancestor slots including unknown ancestors', () => {
+  const persons = [
+    { ...person(1), gender: 'unknown' },
+    { ...person(2), gender: 'female' },
+    { ...person(3), gender: 'male' },
+    { ...person(4), gender: 'male' },
+  ];
+  const relationships = [
+    { type: 'parent', person1_id: 2, person2_id: 1 },
+    { type: 'parent', person1_id: 3, person2_id: 1 },
+    { type: 'parent', person1_id: 4, person2_id: 3 },
+  ];
+
+  const slots = ancestorSlots(persons, relationships, 1, 2);
+
+  assert.deepEqual(slots.levels[0], [1]);
+  assert.deepEqual(slots.levels[1], [3, 2]);
+  assert.deepEqual(slots.levels[2], [4, null, null, null]);
+});
+
+test('derives the complete kinship chain without creating database records', () => {
+  const persons = [
+    person(1), person(2), person(3), person(4), person(5),
+  ];
+  const relationships = [
+    { type: 'parent', person1_id: 1, person2_id: 2 },
+    { type: 'parent', person1_id: 1, person2_id: 3 },
+    { type: 'parent', person1_id: 2, person2_id: 4 },
+    { type: 'parent', person1_id: 3, person2_id: 5 },
+  ];
+  const derived = deriveRelationshipFacts(persons, relationships);
+  const byPair = new Set(derived.map((item) => `${item.type}:${[item.person1_id, item.person2_id].sort((a, b) => a - b).join('-')}`));
+
+  assert.ok(byPair.has('sibling:2-3'));
+  assert.ok(byPair.has('grandparent:1-4'));
+  assert.ok(byPair.has('grandparent:1-5'));
+  assert.ok(byPair.has('aunt_uncle:3-4'));
+  assert.ok(byPair.has('aunt_uncle:2-5'));
+  assert.ok(byPair.has('cousin:4-5'));
+  assert.ok(derived.every((item) => item.inferred === true && item.id === null));
+  assert.equal(withDerivedRelationships(persons, relationships).length, relationships.length + derived.length);
+
+  const cousinPath = shortestRelationshipPath(persons, relationships, 4, 5);
+  assert.equal(cousinPath.steps[0].relationship.type, 'cousin');
+});
+
+test('exploration shell exposes every view, large-tree LOD, minimap, and accessible mobile controls', () => {
+  const appSource = readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+  const explorerSource = readFileSync(path.join(__dirname, '..', 'public', 'explorer.js'), 'utf8');
+  const htmlSource = readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  const cssSource = readFileSync(path.join(__dirname, '..', 'public', 'style.css'), 'utf8');
+
+  for (const view of ['family', 'pedigree', 'descendants', 'fan', 'hourglass', 'list', 'path', 'map']) {
+    assert.match(htmlSource, new RegExp(`data-explorer-view="${view}"`));
+  }
+  assert.match(htmlSource, /id="treeMinimapSvg"/);
+  assert.match(htmlSource, /id="shareTreeModalOverlay"/);
+  assert.match(htmlSource, /id="explorerKinshipToggle"/);
+  assert.match(explorerSource, /shortestRelationshipPath/);
+  assert.match(explorerSource, /ancestorSlots/);
+  assert.match(explorerSource, /\/api\/exploration\/chart\.pdf/);
+  assert.match(explorerSource, /\/api\/shared-tree\//);
+  assert.match(appSource, /renderedPersons\.length > 300/);
+  assert.match(appSource, /state\.zoom < 0\.075/);
+  assert.match(appSource, /function renderMinimap/);
+  assert.match(appSource, /showKinshipLines: false/);
+  assert.match(appSource, /inferred-relationship/);
+  assert.match(appSource, /function positionSidePanel/);
+  assert.match(cssSource, /\.side-panel\s*\{[\s\S]*position: fixed/);
+  assert.match(cssSource, /@media \(max-width: 430px\)/);
+  assert.match(cssSource, /@media print/);
+  assert.match(cssSource, /@media \(prefers-reduced-motion: reduce\)/);
+});
+
+test('Release 9 memory and evidence loaders restore data after authentication reload', () => {
+  const memoriesSource = readFileSync(path.join(__dirname, '..', 'public', 'memories.js'), 'utf8');
+  const evidenceSource = readFileSync(path.join(__dirname, '..', 'public', 'evidence.js'), 'utf8');
+  const htmlSource = readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  assert.match(memoriesSource, /if\(!currentUser\|\|currentUser\.account_status!==['"]approved['"]\)return/);
+  assert.doesNotMatch(memoriesSource, /window\.currentUser/);
+  assert.doesNotMatch(evidenceSource, /window\.currentUser/);
+  assert.match(htmlSource, /id="memoriesView"/);
+  assert.match(htmlSource, /id="memoryComposerForm"/);
+  assert.match(htmlSource, /memories\.js\?v=release9c/);
 });

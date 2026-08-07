@@ -15,6 +15,14 @@ const trustAccess = require('./trust-access');
 const mediaStorage = require('./media-storage');
 const privacyAccess = require('./privacy-access');
 const archiveAccess = require('./archive-access');
+const explorationAccess = require('./exploration-access');
+const evidenceAccess = require('./evidence-access');
+const gedcomAccess = require('./gedcom-access');
+const memoryAccess = require('./memory-access');
+const qualityCollabAccess = require('./quality-collab-access');
+const paymentAccess = require('./payment-access');
+const discoveryLocalizationAccess = require('./discovery-localization-access');
+const treeEngine = require('./public/tree-layout');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -71,6 +79,9 @@ app.get('/uploads/:filename', async (req, res, next) => {
   }
 });
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+app.get('/api/public/memories/:token', (req, res, next) => memoryAccess.publicMemory(req, res, next));
+app.get('/api/public/memories/:token/media', (req, res, next) => memoryAccess.publicMemoryMedia(req, res, next));
+app.get('/memory/:token', (req, res) => memoryAccess.publicMemoryPage(req, res));
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -213,6 +224,13 @@ const requireFamily = familyAccess.requireFamily;
 const requireRole = familyAccess.requireRole;
 
 platformAccess.registerRoutes(app);
+explorationAccess.registerPublicRoutes(app);
+evidenceAccess.registerRoutes(app, { requireAuth, requireApproved, requireFamily, requireRole });
+gedcomAccess.registerRoutes(app, { requireAuth, requireApproved, requireFamily, requireRole });
+memoryAccess.registerRoutes(app, { requireAuth, requireApproved, requireFamily, requireRole });
+qualityCollabAccess.registerRoutes(app, { requireAuth, requireApproved, requireFamily, requireRole });
+paymentAccess.registerRoutes(app);
+discoveryLocalizationAccess.registerRoutes(app, { requireAuth, requireApproved, requireFamily, requireRole });
 
 app.use('/api/account', requireAuth, requireApproved);
 
@@ -236,7 +254,7 @@ app.get('/api/account/data-export', async (req, res, next) => {
                        status, review_note, reviewed_at, created_at
                 FROM account_payment_submissions WHERE user_id = $1 ORDER BY created_at`, [req.session.userId]),
       db.query(`SELECT id, family_id, person_id, event_type, title, event_date, end_date,
-                       place, description, source_title, source_url, visibility, created_at,
+                       place, latitude, longitude, description, source_title, source_url, visibility, created_at,
                        updated_at, deleted_at
                 FROM life_events WHERE created_by_user_id = $1 ORDER BY id`, [req.session.userId]),
       db.query(`SELECT s.id, s.family_id, s.title, s.body, s.story_date, s.place, s.visibility,
@@ -389,7 +407,9 @@ app.use('/api/duplicates', requireAuth, requireApproved, requireFamily);
 app.use('/api/media', requireAuth, requireApproved, requireFamily);
 app.use('/api/recycle-bin', requireAuth, requireApproved, requireFamily);
 app.use('/api/archive', requireAuth, requireApproved, requireFamily);
+app.use('/api/exploration', requireAuth, requireApproved, requireFamily);
 archiveAccess.registerRoutes(app);
+explorationAccess.registerRoutes(app);
 
 app.post('/api/upload', requireAuth, requireApproved, requireFamily, requireRole('contributor'), mediaStorage.upload.single('photo'), async (req, res, next) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -724,10 +744,12 @@ app.get('/api/tree', async (req, res) => {
       JOIN persons p1 ON p1.id = r.person1_id AND p1.deleted_at IS NULL
       JOIN persons p2 ON p2.id = r.person2_id AND p2.deleted_at IS NULL
       WHERE r.family_id = $1`, [req.family.id]);
+    const persons = privacyAccess.serializePeople(pResult.rows, req.session.userId, req.family.role);
+    const relationships = treeEngine.withDerivedRelationships(persons, rResult.rows);
     res.json({
       tree: { id: req.family.id, name: req.family.name, role: req.family.role },
-      persons: privacyAccess.serializePeople(pResult.rows, req.session.userId, req.family.role),
-      relationships: rResult.rows
+      persons,
+      relationships
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1016,7 +1038,7 @@ app.use((err, req, res, next) => {
 });
 
 if (require.main === module) {
-  Promise.all([db.ready, familyAccess.ready, platformAccess.ready, trustAccess.ready, mediaStorage.ready, privacyAccess.ready, archiveAccess.ready])
+  Promise.all([db.ready, familyAccess.ready, platformAccess.ready, trustAccess.ready, mediaStorage.ready, privacyAccess.ready, archiveAccess.ready, explorationAccess.ready, evidenceAccess.ready, gedcomAccess.ready, memoryAccess.ready, qualityCollabAccess.ready, discoveryLocalizationAccess.ready, paymentAccess.ready])
     .then(() => {
       app.listen(PORT, () => {
         console.log('Family tree server running at http://localhost:' + PORT);

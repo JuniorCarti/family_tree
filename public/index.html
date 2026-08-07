@@ -11,10 +11,36 @@
     href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
     rel="stylesheet">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/style.css?v=release6" />
+  <link rel="stylesheet" href="/style.css?v=exploration3" />
+<link rel='manifest' href='/manifest.webmanifest'>
+<meta name='theme-color' content='#8f6526'>
 </head>
 
 <body>
+  <div id="sharedTreeScreen" class="shared-tree-screen hidden">
+    <header class="shared-tree-header">
+      <a class="shared-tree-brand" href="/" aria-label="Open Lineage">
+        <span class="seal">L</span>
+        <span><strong>Lineage</strong><small>Private family presentation</small></span>
+      </a>
+      <div class="shared-tree-meta">
+        <span id="sharedTreeExpiry"></span>
+        <a class="btn btn-ghost" href="/">Create your family archive</a>
+      </div>
+    </header>
+    <main class="shared-tree-main">
+      <div class="shared-tree-heading">
+        <div><p class="archive-kicker">SHARED WITH YOU</p><h1 id="sharedTreeTitle">Family tree</h1></div>
+        <div class="shared-tree-actions">
+          <button class="btn btn-ghost" type="button" id="sharedTreeFitBtn">Fit chart</button>
+          <button class="btn btn-ghost" type="button" id="sharedTreeFullscreenBtn">Present</button>
+        </div>
+      </div>
+      <div id="sharedTreeNotice" class="shared-tree-notice"></div>
+      <section id="sharedTreeCanvas" class="shared-tree-canvas" aria-label="Shared family chart"></section>
+    </main>
+  </div>
+
   <div id="authScreen" class="auth-wrapper hidden">
     <div class="auth-scene" aria-hidden="true">
       <div class="auth-connection auth-connection-one"></div>
@@ -406,9 +432,63 @@
           <span class="workspace-tab-icon">¶</span><span>Stories</span>
           <span class="workspace-count" id="storiesNavCount">0</span>
         </button>
+        <button class="workspace-tab" type="button" data-view="evidence" aria-selected="false">
+          <span class="workspace-tab-icon">◎</span><span>Evidence</span>
+          <span class="workspace-count" id="evidenceNavCount">0</span>
+        </button>
+        <button class="workspace-tab" type="button" data-view="memories" aria-selected="false">
+          <span class="workspace-tab-icon">✦</span><span>Memories</span>
+          <span class="workspace-count" id="memoriesNavCount">0</span>
+        </button>
+        <button class="workspace-tab" type="button" data-view="quality" aria-selected="false">
+          <span class="workspace-tab-icon">✓</span><span>Data quality</span><span class="workspace-count" id="qualityNavCount">0</span>
+        </button>
+        <button class="workspace-tab" type="button" data-view="collaboration" aria-selected="false">
+          <span class="workspace-tab-icon">↗</span><span>Collaborate</span><span class="workspace-count" id="collabNavCount">0</span>
+        </button>
       </div>
       <div class="workspace-nav-note"><span></span>Private family archive</div>
     </nav>
+
+    <section class="explorer-command-bar" id="explorerCommandBar" aria-label="Tree exploration controls">
+      <div class="explorer-view-switcher" role="tablist" aria-label="Tree layout">
+        <button class="explorer-view-button active" type="button" data-explorer-view="family" role="tab" aria-selected="true"><span>⌘</span>Family</button>
+        <button class="explorer-view-button" type="button" data-explorer-view="pedigree" role="tab" aria-selected="false"><span>△</span>Pedigree</button>
+        <button class="explorer-view-button" type="button" data-explorer-view="descendants" role="tab" aria-selected="false"><span>▽</span>Descendants</button>
+        <button class="explorer-view-button" type="button" data-explorer-view="fan" role="tab" aria-selected="false"><span>◒</span>Fan</button>
+        <button class="explorer-view-button" type="button" data-explorer-view="hourglass" role="tab" aria-selected="false"><span>◇</span>Hourglass</button>
+        <button class="explorer-view-button" type="button" data-explorer-view="list" role="tab" aria-selected="false"><span>≡</span>List</button>
+        <button class="explorer-view-button" type="button" data-explorer-view="path" role="tab" aria-selected="false"><span>↝</span>Path</button>
+        <button class="explorer-view-button" type="button" data-explorer-view="map" role="tab" aria-selected="false"><span>⌖</span>Places</button>
+      </div>
+      <div class="explorer-context-controls">
+        <label class="explorer-select-wrap"><span>Focus</span><select id="explorerFocusPerson" aria-label="Focus person"></select></label>
+        <label class="explorer-select-wrap explorer-depth-wrap"><span>Depth</span><select id="explorerDepth" aria-label="Generation depth">
+          <option value="1">1 generation</option><option value="2">2 generations</option>
+          <option value="3">3 generations</option><option value="4" selected>4 generations</option>
+          <option value="5">5 generations</option><option value="6">6 generations</option>
+          <option value="7">7 generations</option><option value="8">8 generations</option>
+          <option value="all">All generations</option>
+        </select></label>
+        <button class="explorer-icon-button" type="button" id="explorerFocusBranchBtn" title="Show only the selected person's nearby branch" aria-pressed="false">Focus branch</button>
+        <button class="explorer-icon-button" type="button" id="explorerCollapseBtn" title="Collapse or expand the selected person's descendants">Collapse branch</button>
+        <button class="explorer-icon-button hidden" type="button" id="explorerResetBranchesBtn">Expand all</button>
+      </div>
+      <div class="explorer-output-controls">
+        <span class="explorer-result-count" id="explorerResultCount">0 people</span>
+        <button class="explorer-icon-button" type="button" id="explorerKinshipToggle" aria-pressed="false" title="Show inferred kinship links for the selected person">Kinship links</button>
+        <div class="explorer-menu-wrap">
+          <button class="explorer-icon-button" type="button" id="explorerExportMenuBtn" aria-expanded="false">Export ▾</button>
+          <div class="explorer-menu hidden" id="explorerExportMenu">
+            <button type="button" data-export-action="png">High-resolution PNG</button>
+            <button type="button" data-export-action="pdf">Print-ready PDF</button>
+            <button type="button" data-export-action="print">Print chart</button>
+          </div>
+        </div>
+        <button class="explorer-icon-button" type="button" id="explorerShareBtn">Private link</button>
+        <button class="explorer-icon-button explorer-present-button" type="button" id="explorerPresentBtn">Present</button>
+      </div>
+    </section>
 
     <!-- ============ Canvas ============ -->
     <main class="canvas-wrap" id="canvasWrap">
@@ -422,6 +502,11 @@
         </div>
       </div>
       <svg id="treeSvg" width="100%" height="100%"></svg>
+      <section id="explorerAltView" class="explorer-alt-view hidden" aria-live="polite"></section>
+      <aside id="treeMinimap" class="tree-minimap" aria-label="Tree overview map">
+        <div class="tree-minimap-heading"><span>Overview</span><small id="treeMinimapCount"></small></div>
+        <svg id="treeMinimapSvg" viewBox="0 0 180 112" preserveAspectRatio="xMidYMid meet"></svg>
+      </aside>
       <div class="tree-viewport-tools" aria-label="Tree view controls">
         <button type="button" id="treeZoomOutBtn" aria-label="Zoom out" title="Zoom out">−</button>
         <output id="treeZoomLabel" aria-live="polite">100%</output>
@@ -450,19 +535,19 @@
         <div><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
             <line x1="0" y1="2" x2="28" y2="2" stroke="#b8863b" stroke-width="2.4" />
           </svg>Spouse</div>
-        <div><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
+        <div class="kinship-legend-item"><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
             <line x1="0" y1="2" x2="28" y2="2" stroke="#5b8dd9" stroke-width="2" stroke-dasharray="8,5" />
           </svg>Sibling</div>
-        <div><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
+        <div class="kinship-legend-item"><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
             <line x1="0" y1="2" x2="28" y2="2" stroke="#8b5cf6" stroke-width="2" stroke-dasharray="10,4" />
           </svg>Grandparent / Grandchild</div>
-        <div><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
+        <div class="kinship-legend-item"><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
             <line x1="0" y1="2" x2="28" y2="2" stroke="#ec4899" stroke-width="1.8" stroke-dasharray="6,4,2,4" />
           </svg>Aunt / Uncle / Niece / Nephew</div>
-        <div><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
+        <div class="kinship-legend-item"><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
             <line x1="0" y1="2" x2="28" y2="2" stroke="#14b8a6" stroke-width="1.8" stroke-dasharray="5,5" />
           </svg>Cousin</div>
-        <div><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
+        <div class="kinship-legend-item"><svg width="28" height="4" style="vertical-align:middle;margin-right:6px">
             <line x1="0" y1="2" x2="28" y2="2" stroke="#94a3b8" stroke-width="1.8" stroke-dasharray="4,6" />
           </svg>Other Relative</div>
       </div>
@@ -524,6 +609,46 @@
       <section id="storiesFeatured" class="stories-featured hidden"></section>
       <section class="story-grid" id="storyGrid"></section>
     </main>
+
+    <main class="archive-view evidence-view hidden" id="evidenceView">
+      <section class="archive-hero evidence-hero">
+        <div class="archive-hero-copy"><p class="archive-kicker">SOURCES &amp; EVIDENCE</p><h1>Keep every claim <em>traceable.</em></h1><p>Attach records, research notes, and original scans to the people and relationships they support.</p></div>
+        <div class="archive-hero-actions"><button class="btn archive-primary-action" id="addSourceBtn" type="button">Add a source</button><button class="btn archive-secondary-action" id="gedcomExportBtn" type="button">Export GEDCOM</button><button class="btn archive-secondary-action" id="gedzipExportBtn" type="button">Export GEDZip</button><label class="btn archive-secondary-action" for="gedcomImportFile">Preview import</label><input class="hidden" id="gedcomImportFile" type="file" accept=".ged,.gedcom,.zip" /></div>
+      </section>
+      <section class="archive-toolbar evidence-toolbar"><div class="archive-search"><span>⌕</span><input id="evidenceSearch" type="search" placeholder="Search sources and repositories" /></div><select id="evidenceSubjectType"><option value="person">People</option><option value="relationship">Relationships</option><option value="event">Life events</option><option value="story">Stories</option></select><input id="evidenceSubjectId" type="number" min="1" placeholder="Subject ID" aria-label="Evidence subject ID" /><button class="btn btn-ghost" id="loadEvidenceBtn" type="button">View attached evidence</button><span id="evidenceResultCount" class="stories-result-count">0 sources</span></section>
+      <section class="evidence-layout"><div class="evidence-source-list" id="evidenceSourceList"></div><aside class="evidence-detail" id="evidenceDetail"><div class="empty-card"><span class="empty-glyph">◎</span><h2>Build a source library</h2><p>Select a source or enter a subject ID to review the evidence behind a family fact.</p></div></aside></section>
+    </main>
+
+    <main class="archive-view memories-view hidden" id="memoriesView">
+      <section class="archive-hero memories-hero">
+        <div class="archive-hero-copy"><p class="archive-kicker">THE FAMILY MEMORY HOUSE</p><h1>Keep the moments that make <em>us.</em></h1><p>Photos, voices, recipes, stories, and the small details future generations will be glad you saved.</p></div>
+        <div class="archive-hero-actions"><button class="btn archive-primary-action" id="addMemoryBtn" type="button">Add a memory</button><button class="btn archive-secondary-action" id="startSlideshowBtn" type="button">Start slideshow</button><button class="btn archive-secondary-action" id="printMemoryBookBtn" type="button">Print memory book</button></div>
+        <div class="archive-stats memory-stats"><article><strong id="memoryCount">0</strong><span>memories</span></article><article><strong id="albumCount">0</strong><span>albums</span></article><article><strong id="recipeCount">0</strong><span>recipes</span></article><article><strong id="memorialCount">0</strong><span>memorials</span></article></div>
+      </section>
+      <div class="memory-section-tabs" role="tablist"><button class="memory-section-tab active" data-memory-section="gallery" type="button">Gallery</button><button class="memory-section-tab" data-memory-section="albums" type="button">Albums</button><button class="memory-section-tab" data-memory-section="recipes" type="button">Family recipes</button><button class="memory-section-tab" data-memory-section="calendar" type="button">On this day</button><button class="memory-section-tab" data-memory-section="memorials" type="button">Memorials</button></div>
+      <section class="memory-section" id="memoryGallerySection"><div class="memory-toolbar"><div class="archive-search"><span>⌕</span><input id="memorySearch" type="search" placeholder="Search captions, places, and people" /></div><select id="memoryTypeFilter"><option value="">All memories</option><option value="photo">Photos</option><option value="video">Videos</option><option value="audio">Audio</option><option value="document">Documents</option><option value="story">Stories</option></select><select id="memoryPersonFilter"><option value="">Everyone</option></select><span id="memoryResultCount" class="stories-result-count">0 memories</span></div><div class="memory-grid" id="memoryGrid"></div></section>
+      <section class="memory-section hidden" id="memoryAlbumsSection"><div class="memory-section-heading"><div><p class="archive-kicker">CURATED COLLECTIONS</p><h2>Albums with a beginning, middle, and meaning.</h2></div><button class="btn btn-primary" id="addAlbumBtn" type="button">New album</button></div><div class="album-grid" id="albumGrid"></div></section>
+      <section class="memory-section hidden" id="memoryRecipesSection"><div class="memory-section-heading"><div><p class="archive-kicker">RECIPES &amp; RITUALS</p><h2>The taste of home.</h2></div><button class="btn btn-primary" id="addRecipeBtn" type="button">Save a recipe</button></div><div class="recipe-grid" id="recipeGrid"></div></section>
+      <section class="memory-section hidden" id="memoryCalendarSection"><div class="memory-section-heading"><div><p class="archive-kicker">THE FAMILY CALENDAR</p><h2>On this day in our family.</h2></div></div><div class="calendar-memory-grid" id="memoryCalendarGrid"></div></section>
+      <section class="memory-section hidden" id="memoryMemorialsSection"><div class="memory-section-heading"><div><p class="archive-kicker">REMEMBERING</p><h2>Names, lives, and love carried forward.</h2></div><button class="btn btn-primary" id="addMemorialBtn" type="button">Create memorial</button></div><div class="memorial-grid" id="memorialGrid"></div></section>
+      <aside class="memory-detail hidden" id="memoryDetail"></aside>
+    </main>
+
+    <main class="archive-view quality-view hidden" id="qualityView">
+      <section class="archive-hero quality-hero"><div class="archive-hero-copy"><p class="archive-kicker">CHRONOLOGY &amp; DATA QUALITY</p><h1>Let the timeline ask <em>good questions.</em></h1><p>Find impossible dates, unusual ages, missing context, and places that need a human review before they become family history.</p></div><div class="archive-hero-actions"><button class="btn archive-primary-action" id="runQualityScanBtn" type="button">Scan the family tree</button><button class="btn archive-secondary-action" id="qualityTimelineBtn" type="button">Open timeline</button></div><div class="archive-stats"><article><strong id="qualityErrorCount">0</strong><span>errors</span></article><article><strong id="qualityWarningCount">0</strong><span>warnings</span></article><article><strong id="qualityInfoCount">0</strong><span>missing context</span></article></div></section>
+      <section class="quality-shell"><div class="quality-intro"><div><p class="archive-kicker">REVIEW QUEUE</p><h2>Suggested corrections stay suggestions.</h2><p>Every finding is reviewable. Nothing changes the tree automatically.</p></div><select id="qualityStatusFilter"><option value="open">Open findings</option><option value="all">All findings</option><option value="dismissed">Dismissed</option><option value="fixed">Fixed</option></select></div><div id="qualityFindingList" class="quality-finding-list"></div></section>
+    </main>
+
+    <main class="archive-view collaboration-view hidden" id="collaborationView">
+      <section class="archive-hero collaboration-hero"><div class="archive-hero-copy"><p class="archive-kicker">FAMILY WORKROOM</p><h1>Build the record <em>together.</em></h1><p>Propose edits, discuss facts, assign research, and keep a clear history of who contributed what.</p></div><div class="archive-hero-actions"><button class="btn archive-primary-action" id="newResearchTaskBtn" type="button">Assign research</button><button class="btn archive-secondary-action" id="newAnnouncementBtn" type="button">Post announcement</button></div><div class="archive-stats"><article><strong id="collabProposalCount">0</strong><span>proposals</span></article><article><strong id="collabTaskCount">0</strong><span>research tasks</span></article><article><strong id="collabUnreadCount">0</strong><span>unread notices</span></article></div></section>
+      <div class="collab-tabs" role="tablist"><button class="collab-tab active" data-collab-section="review" type="button">Review queue</button><button class="collab-tab" data-collab-section="tasks" type="button">Research tasks</button><button class="collab-tab" data-collab-section="activity" type="button">Activity</button><button class="collab-tab" data-collab-section="notices" type="button">Notices</button></div>
+      <section class="collab-section" id="collabReviewSection"><div class="collab-heading"><div><p class="archive-kicker">SIDE-BY-SIDE REVIEW</p><h2>Proposed edits and conflicts.</h2></div><button class="btn btn-ghost" id="refreshCollabBtn" type="button">Refresh</button></div><div id="proposalList" class="proposal-list"></div><div class="collab-heading"><div><p class="archive-kicker">DISCUSSION</p><h2>Family comments.</h2></div></div><div id="commentList" class="comment-list"></div><form id="collabCommentForm" class="collab-comment-form"><input id="collabCommentEntityType" value="person" aria-label="Comment entity type" /><input id="collabCommentEntityId" type="number" placeholder="Person or event ID" required /><input id="collabCommentBody" placeholder="Add a note or mention @relative@example.com" required /><button class="btn btn-primary" type="submit">Post</button></form></section>
+      <section class="collab-section hidden" id="collabTasksSection"><div class="collab-heading"><div><p class="archive-kicker">RESEARCH BOARD</p><h2>Questions the family can answer together.</h2></div></div><div id="taskList" class="task-list"></div></section>
+      <section class="collab-section hidden" id="collabActivitySection"><div class="collab-heading"><div><p class="archive-kicker">WHO DID WHAT</p><h2>A living record of contribution.</h2></div></div><div id="activityList" class="activity-list"></div></section>
+      <section class="collab-section hidden" id="collabNoticesSection"><div class="collab-heading"><div><p class="archive-kicker">FAMILY BULLETIN</p><h2>Announcements and notifications.</h2></div></div><div id="announcementList" class="announcement-list"></div><div id="notificationList" class="notification-list"></div></section>
+    </main>
+
+    <div class="modal-overlay hidden" id="memoryComposerOverlay"><div class="modal memory-composer"><div class="modal-header"><div><p class="archive-kicker">PRESERVE A MOMENT</p><h3 id="memoryComposerTitle">Add a memory</h3></div><button class="modal-close" id="memoryComposerClose">&times;</button></div><form id="memoryComposerForm" class="archive-form-grid"><label class="span-2">Title<input id="memoryTitle" required maxlength="220" placeholder="A name future generations will recognize" /></label><label>Type<select id="memoryType"><option value="photo">Photo</option><option value="video">Video</option><option value="audio">Audio</option><option value="document">Document</option></select></label><label>File<input id="memoryFile" type="file" accept="image/*,audio/*,video/*,.pdf,.txt" /></label><label>Date<input id="memoryDate" placeholder="1998 or 12 June 1998" /></label><label>Place<input id="memoryPlace" placeholder="Kakamega, Kenya" /></label><label>Photographer / speaker<input id="memoryPhotographer" /></label><label>Tag people by ID<input id="memoryPeople" placeholder="1, 2, 3" /></label><label class="span-2">Caption<textarea id="memoryCaption" rows="3" placeholder="What should the family know about this moment?"></textarea></label><label class="span-2">Transcript or translation<textarea id="memoryTranscript" rows="3" placeholder="For oral histories, add a transcript or translation here."></textarea></label><label class="checkbox-field span-2"><input id="memoryPublic" type="checkbox" /> Create a QR-ready public memory link</label><div class="span-2 form-actions"><button class="btn btn-ghost" type="button" id="memoryComposerCancel">Cancel</button><button class="btn btn-primary" type="submit">Save memory</button></div><p id="memoryComposerMessage" class="hidden family-message"></p></form></div></div>
 
     <!-- ============ Side Detail Panel ============ -->
     <aside class="side-panel hidden" id="sidePanel">
@@ -747,7 +872,7 @@
           <div class="field-row span-2"><label>Person *</label><select id="eventPerson" required></select></div>
           <div class="field-row"><label>Event type *</label><select id="eventType" required>
             <option value="birth">Birth</option><option value="education">Education</option>
-            <option value="marriage">Marriage</option><option value="work">Work</option>
+            <option value="marriage">Marriage</option><option value="residence">Residence</option><option value="work">Work</option>
             <option value="migration">Migration</option><option value="milestone" selected>Milestone</option>
             <option value="death">Death</option><option value="other">Other</option>
           </select></div>
@@ -759,6 +884,8 @@
           <div class="field-row"><label>Start date or year</label><input id="eventDate" maxlength="50" placeholder="1968 or 1968-04-12" /></div>
           <div class="field-row"><label>End date (optional)</label><input id="eventEndDate" maxlength="50" placeholder="1972" /></div>
           <div class="field-row span-2"><label>Place</label><input id="eventPlace" maxlength="255" placeholder="Village, town, or country" /></div>
+          <div class="field-row"><label>Latitude for map</label><input id="eventLatitude" type="number" min="-90" max="90" step="any" placeholder="-1.2864" /></div>
+          <div class="field-row"><label>Longitude for map</label><input id="eventLongitude" type="number" min="-180" max="180" step="any" placeholder="36.8172" /></div>
           <div class="field-row span-2"><label>What happened?</label><textarea id="eventDescription" rows="5" maxlength="10000" placeholder="Add the details future generations should know."></textarea></div>
           <div class="field-row"><label>Source title</label><input id="eventSourceTitle" maxlength="255" placeholder="Certificate, interview, archive..." /></div>
           <div class="field-row"><label>Source link</label><input id="eventSourceUrl" type="url" placeholder="https://..." /></div>
@@ -855,9 +982,53 @@
     </div>
   </div>
 
-  <script src="/tree-layout.js?v=release6"></script>
-  <script src="/app.js?v=release6"></script>
-  <script src="/archive.js?v=release3"></script>
+  <!-- ============ Private Tree Link Modal ============ -->
+  <div class="modal-overlay hidden" id="shareTreeModalOverlay">
+    <div class="modal share-tree-modal">
+      <div class="modal-header">
+        <div><p class="archive-kicker">CONTROLLED SHARING</p><h3>Private presentation link</h3></div>
+        <button class="modal-close" id="shareTreeModalClose" type="button">&times;</button>
+      </div>
+      <div class="share-tree-intro">
+        <span class="share-tree-shield">◇</span>
+        <div><strong>Share a view, not an account.</strong><p>The link is read-only, expires automatically, and can be revoked at any time.</p></div>
+      </div>
+      <form id="shareTreeForm">
+        <div class="field-grid">
+          <div class="field-row span-2"><label>Link label</label><input id="shareTreeLabel" maxlength="120" placeholder="e.g. Reunion presentation" /></div>
+          <div class="field-row"><label>View</label><select id="shareTreeView">
+            <option value="family">Family</option><option value="pedigree">Pedigree</option>
+            <option value="descendants">Descendants</option><option value="fan">Fan chart</option>
+            <option value="hourglass">Hourglass</option><option value="list">Compact list</option>
+          </select></div>
+          <div class="field-row"><label>Expires</label><select id="shareTreeExpiry">
+            <option value="24">In 24 hours</option><option value="168" selected>In 7 days</option><option value="720">In 30 days</option>
+          </select></div>
+          <div class="field-row span-2"><label class="share-living-toggle"><input id="shareTreeIncludeLiving" type="checkbox" /><span><strong>Include living relatives</strong><small>Living people remain limited to name and birth year. Leave off for the safest link.</small></span></label></div>
+        </div>
+        <div id="shareTreeMessage" class="hidden family-message"></div>
+        <div class="modal-footer"><div></div><button class="btn btn-primary" type="submit">Create private link</button></div>
+      </form>
+      <section class="share-created-panel hidden" id="shareCreatedPanel">
+        <label>Copy this link now—it is shown only once.</label>
+        <div class="share-copy-row"><input id="shareCreatedUrl" readonly /><button class="btn btn-primary" id="shareCopyBtn" type="button">Copy</button></div>
+      </section>
+      <section class="share-links-section">
+        <div class="share-links-heading"><h4>Active and recent links</h4><button class="btn btn-ghost" id="refreshShareLinksBtn" type="button">Refresh</button></div>
+        <div id="shareLinksList"><p class="muted-text">Open this panel to load links.</p></div>
+      </section>
+    </div>
+  </div>
+
+  <script src="/tree-layout.js?v=exploration3"></script>
+  <script src="/explorer.js?v=exploration3"></script>
+  <script src="/app.js?v=exploration3"></script>
+  <script src="/archive.js?v=exploration3"></script>
+  <script src="/evidence.js?v=release45b"></script>
+  <script src="/memories.js?v=release9c"></script>
+  <script src="/quality-collab.js?v=release78"></script>
 </body>
 
 </html>
+  <script src='/discovery-localization.js?v=release1011'></script>
+  <script src='/release13.js?v=release13'></script>

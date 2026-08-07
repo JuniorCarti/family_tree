@@ -1,0 +1,6 @@
+(()=>{
+  const $=s=>document.querySelector(s);
+  const esc=v=>String(v??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  function mount(){const n=document.querySelector('.workspace-tabs');if(!n||document.querySelector('#discoveryView'))return;const b=document.createElement('button');b.className='workspace-tab';b.dataset.view='discovery';b.textContent='Discover';n.appendChild(b);const s=document.createElement('section');s.id='discoveryView';s.className='discovery-shell hidden';s.innerHTML='<h1>Search and discovery</h1><input id=discoverySearchInput placeholder=Search><button id=discoverySearchBtn>Search</button><div id=discoveryResults></div>';document.querySelector('#app').appendChild(s);b.onclick=()=>{s.classList.remove('hidden');document.querySelector('#canvasWrap')?.classList.add('hidden')}}
+  mount();document.addEventListener('click',async e=>{if(e.target.id==='discoverySearchBtn'){const q=document.querySelector('#discoverySearchInput').value;const d=await api('/discovery/search?q='+encodeURIComponent(q));document.querySelector('#discoveryResults').innerHTML=d.people.map(p=>'<button class=discovery-person>'+esc(fullName(p))+'</button>').join('')||'<p>No people found.</p>'}});
+})();

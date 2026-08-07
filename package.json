@@ -6,9 +6,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "npm run test:tree-layout && npm run test:family-access && npm run test:legacy-migration",
+    "test": "npm run test:tree-layout && npm run test:family-access && npm run test:memories && npm run test:legacy-migration",
     "test:tree-layout": "node --test tests/tree-layout.test.js",
     "test:family-access": "node --test tests/family-sharing.test.js",
+    "test:memories": "node --test tests/memories.test.js",
     "test:legacy-migration": "node --test tests/legacy-migration.test.js"
   },
   "engines": {
@@ -16,6 +17,7 @@
   },
   "dependencies": {
     "@google-cloud/storage": "^7.21.0",
+    "adm-zip": "^0.6.0",
     "bcrypt": "^6.0.0",
     "connect-pg-simple": "^10.0.0",
     "cors": "^2.8.5",
@@ -27,7 +29,9 @@
     "helmet": "^8.3.0",
     "multer": "^2.2.0",
     "nodemailer": "^9.0.4",
-    "pg": "^8.13.1"
+    "pdfkit": "^0.17.2",
+    "pg": "^8.13.1",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "supertest": "^7.2.2"

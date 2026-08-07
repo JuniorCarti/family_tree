@@ -18,7 +18,9 @@ Lineage is a full-stack family tree application for building shared, multi-gener
 - Viewer, contributor, administrator, and owner permissions
 - Multiple family trees per account with an active-tree selector
 - Parent, spouse, sibling, grandparent, grandchild, cousin, and custom relationships
-- Interactive SVG layout with search, pan, and zoom
+- Eight tree exploration modes: family, pedigree, descendants, fan, hourglass, compact list, relationship path, and places map
+- Focus and generation controls, branch collapse, minimap, touch navigation, fullscreen presentation, and large-tree viewport virtualization
+- Print-ready PDF, high-resolution PNG, print styling, and expiring privacy-filtered presentation links
 - Person editing, private Cloud Storage media, audit history, duplicate detection, merging, and Excel export
 - Living-person protection, per-profile visibility, safe private placeholders, and privacy-aware exports
 - Recycle-bin restore plus personal account-data export and confirmed account deletion
@@ -112,6 +114,8 @@ Firebase preserves the `__session` cookie for rewritten `/api/**` requests. Expr
 | `/api/export` | Active-family Excel export |
 | `/api/recycle-bin` | Administrator restore and owner permanent deletion |
 | `/api/archive` | Privacy-aware timeline events, stories, comments, overview, and JSON export |
+| `/api/exploration` | Focused branch slices, chart PDFs, and administrator-controlled presentation links |
+| `/api/shared-tree` | Rate-limited, expiring, read-only private presentations |
 
 Detailed family endpoints and permissions are in [docs/FAMILY_ACCESS.md](docs/FAMILY_ACCESS.md).
 
@@ -136,6 +140,7 @@ npm test
 - [Privacy and data control release](docs/RELEASE_2_PRIVACY.md)
 - [Family archive and storytelling release](docs/RELEASE_3_ARCHIVE.md)
 - [Mobile tree and scale release](docs/RELEASE_6_MOBILE_SCALE.md)
+- [Complete tree exploration release](docs/RELEASE_6_EXPLORATION.md)
 
 Use a feature branch and pull request rather than committing directly to `main`.
 
@@ -145,4 +150,4 @@ Use a feature branch and pull request rather than committing directly to `main`.
 - SMTP and the private media bucket must remain configured in each deployed environment.
 - The Express API remains mostly monolithic; route/service separation would improve maintainability as it grows.
 - Archive citations are links in Release 3; document attachments, audio interviews, GEDCOM import, and print-book generation are not implemented yet.
-- Release 6 keeps long-lineage layout and touch navigation responsive; extremely large trees are not yet viewport-virtualized.
+- Place mapping requires deliberate event coordinates; automatic third-party geocoding is not enabled.

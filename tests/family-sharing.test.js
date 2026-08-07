@@ -26,6 +26,8 @@ const familyAccess = require('../family-access');
 const platformAccess = require('../platform-access');
 const privacyAccess = require('../privacy-access');
 const archiveAccess = require('../archive-access');
+const explorationAccess = require('../exploration-access');
+const memoryAccess = require('../memory-access');
 
 async function signup(agent, body) {
   return agent.post('/api/auth/signup').send({ password, ...body });
@@ -36,7 +38,7 @@ async function approve(superadmin, userId) {
 }
 
 test('payment approval gates shared-family access and roles', async (t) => {
-  await Promise.all([db.ready, familyAccess.ready, platformAccess.ready, privacyAccess.ready, archiveAccess.ready]);
+  await Promise.all([db.ready, familyAccess.ready, platformAccess.ready, privacyAccess.ready, archiveAccess.ready, explorationAccess.ready, memoryAccess.ready]);
   t.after(async () => {
     await db.pool.end();
     fs.rmSync(mediaTestDir, { recursive: true, force: true });
@@ -275,6 +277,8 @@ test('payment approval gates shared-family access and roles', async (t) => {
     title: 'Moved to Nairobi',
     event_date: '1958',
     place: 'Nairobi, Kenya',
+    latitude: -1.286389,
+    longitude: 36.817223,
     description: 'Started a new chapter for the family.',
     source_title: 'Recorded family interview',
     source_url: 'https://example.test/family-interview',
@@ -282,6 +286,8 @@ test('payment approval gates shared-family access and roles', async (t) => {
   });
   assert.equal(migrationEvent.status, 201, migrationEvent.text);
   assert.equal(migrationEvent.body.person_name, 'Wanjiku Archive');
+  assert.equal(Number(migrationEvent.body.latitude), -1.286389);
+  assert.equal(Number(migrationEvent.body.longitude), 36.817223);
 
   const livingEvent = await owner.post('/api/archive/events').send({
     person_id: livingPrivateDetails.body.id,
@@ -354,6 +360,79 @@ test('payment approval gates shared-family access and roles', async (t) => {
   assert.equal(archiveExport.status, 200, archiveExport.text);
   assert.equal(archiveExport.body.events.some((event) => event.id === livingEvent.body.id), false);
   assert.equal(archiveExport.body.stories.some((story) => story.id === sensitiveStory.body.id), false);
+
+  const parentRelationship = await owner.post('/api/relationships').send({
+    type: 'parent',
+    person1_id: ancestor.body.id,
+    person2_id: firstPerson.body.id
+  });
+  assert.equal(parentRelationship.status, 201, parentRelationship.text);
+
+  const descendantSlice = await owner.get(`/api/exploration/tree-slice?focus_id=${ancestor.body.id}&direction=descendants&depth=2`);
+  assert.equal(descendantSlice.status, 200, descendantSlice.text);
+  assert.deepEqual(
+    new Set(descendantSlice.body.persons.map((person) => person.id)),
+    new Set([ancestor.body.id, firstPerson.body.id])
+  );
+  assert.equal(descendantSlice.body.slice.total_people, 5);
+
+  const viewerShareList = await viewer.get('/api/exploration/share-links');
+  assert.equal(viewerShareList.status, 403, viewerShareList.text);
+
+  const safeShare = await owner.post('/api/exploration/share-links').send({
+    label: 'Reunion ancestors',
+    view: 'pedigree',
+    focus_person_id: firstPerson.body.id,
+    generation_depth: 4,
+    expiry_hours: 24,
+    include_living: false
+  });
+  assert.equal(safeShare.status, 201, safeShare.text);
+  assert.match(safeShare.body.url, /\?share=/);
+  const safeToken = new URL(safeShare.body.url).searchParams.get('share');
+  assert.ok(safeToken);
+  const storedToken = await db.query('SELECT token_hash FROM family_share_links WHERE id = $1', [safeShare.body.link.id]);
+  assert.equal(storedToken.rows[0].token_hash, explorationAccess.hashToken(safeToken));
+  assert.notEqual(storedToken.rows[0].token_hash, safeToken);
+
+  const publicSafeTree = await request(app).get(`/api/shared-tree/${encodeURIComponent(safeToken)}`);
+  assert.equal(publicSafeTree.status, 200, publicSafeTree.text);
+  assert.equal(publicSafeTree.headers['cache-control'], 'private, no-store');
+  assert.equal(publicSafeTree.body.tree.id, undefined);
+  assert.equal(publicSafeTree.body.persons[0].family_id, undefined);
+  assert.equal(publicSafeTree.body.persons.some((person) => person.life_status === 'living'), false);
+  assert.equal(publicSafeTree.body.persons.some((person) => person.id === ownerOnly.body.id), false);
+
+  const livingShare = await owner.post('/api/exploration/share-links').send({
+    label: 'Living relatives preview',
+    view: 'family',
+    generation_depth: 4,
+    expiry_hours: 24,
+    include_living: true
+  });
+  assert.equal(livingShare.status, 201, livingShare.text);
+  const livingToken = new URL(livingShare.body.url).searchParams.get('share');
+  const publicLivingTree = await request(app).get(`/api/shared-tree/${encodeURIComponent(livingToken)}`);
+  assert.equal(publicLivingTree.status, 200, publicLivingTree.text);
+  const publicLimited = publicLivingTree.body.persons.find((person) => person.id === livingPrivateDetails.body.id);
+  assert.equal(publicLimited.privacy_redacted, 'living_limited');
+  assert.equal(publicLimited.birth_date, '1994');
+  assert.equal(publicLivingTree.body.persons.some((person) => person.id === ownerOnly.body.id), false);
+  assert.ok(publicLivingTree.body.relationships.length > 0);
+  assert.equal(publicLivingTree.body.relationships[0].created_by_user_id, undefined);
+
+  const chartPdf = await owner.get(`/api/exploration/chart.pdf?view=descendants&focus_id=${ancestor.body.id}&depth=3`);
+  assert.equal(chartPdf.status, 200, chartPdf.text);
+  assert.match(chartPdf.headers['content-type'], /^application\/pdf/);
+  assert.ok(chartPdf.body.length > 1000);
+
+  const shareList = await owner.get('/api/exploration/share-links');
+  assert.equal(shareList.status, 200, shareList.text);
+  assert.ok(shareList.body.links.some((link) => link.id === safeShare.body.link.id));
+  const revokeShare = await owner.delete(`/api/exploration/share-links/${safeShare.body.link.id}`);
+  assert.equal(revokeShare.status, 200, revokeShare.text);
+  const revokedTree = await request(app).get(`/api/shared-tree/${encodeURIComponent(safeToken)}`);
+  assert.equal(revokedTree.status, 404, revokedTree.text);
 
   const members = await owner.get('/api/family/members');
   assert.equal(members.status, 200, members.text);
