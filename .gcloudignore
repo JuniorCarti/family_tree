@@ -9,3 +9,7 @@
 node_modules
 npm-debug.log
 public/uploads
+migration-private
+backups
+*.dump
+*.backup
