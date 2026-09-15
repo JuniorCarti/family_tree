@@ -1033,8 +1033,14 @@ app.get('*', (req, res, next) => {
 });
 
 app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: err.message || 'Server error' });
+  console.error({
+    method: req.method,
+    path: req.originalUrl,
+    errorClass: err?.constructor?.name || 'Error',
+    message: err?.message || 'Unknown server error',
+    stack: err?.stack
+  });
+  res.status(500).json({ error: 'Server error' });
 });
 
 if (require.main === module) {
