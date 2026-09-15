@@ -1296,6 +1296,19 @@ body {
   line-height: 1.45;
 }
 
+.boot-retry-btn {
+  display: block;
+  margin: 10px auto 0;
+  padding: 7px 16px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .field-row input,
 .field-row select,
 .field-row textarea {
@@ -4424,3 +4437,6 @@ body {
   .explorer-menu-wrap > .explorer-icon-button { width: 100%; }
   .explorer-menu { right: 0; left: auto; max-width: calc(100vw - 24px); }
 }
+/* Firebase provider controls */
+.auth-provider-divider { display:flex; align-items:center; gap:10px; margin:16px 0 10px; color:var(--ink-soft); font-size:12px; }
+.auth-provider-divider::before, .auth-provider-divider::after { content:''; height:1px; flex:1; background:var(--card-edge); }
