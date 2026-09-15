@@ -9,3 +9,7 @@ npm-debug.log
 public/uploads
 Dockerfile
 README.deploy.md
+migration-private
+backups
+*.dump
+*.backup
