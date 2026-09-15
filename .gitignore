@@ -9,3 +9,9 @@ public/uploads/*
 
 .firebase/
 .codebase-memory/
+
+# Private migration evidence, backups, and credentials must never be committed.
+migration-private/
+backups/
+*.dump
+*.backup
