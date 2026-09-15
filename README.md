@@ -5,12 +5,12 @@ Lineage is a full-stack family tree application for building shared, multi-gener
 ## Live application
 
 - Firebase Hosting: https://family-tree-a4c4f.web.app
-- Cloud Run API: https://lineage-api-662162914072.us-central1.run.app
+- Firebase Functions API (2nd gen), routed through Hosting at `/api/**`
 - Google Cloud project: `family-tree-a4c4f`
 
 ## Features
 
-- Individual email accounts with PostgreSQL-backed sessions
+- Individual email accounts with Firebase Authentication and verified ID tokens
 - Verified email addresses and expiring, single-use password recovery links
 - KES 500 manual M-Pesa unlock with platform-superadmin approval for new signups
 - Sign-in and pre-approval product guide with payment safety, feature previews, searchable FAQs, and support guidance
@@ -35,11 +35,11 @@ See [Family Access and Sharing](docs/FAMILY_ACCESS.md) for family roles and invi
 | Layer | Technology |
 | --- | --- |
 | Frontend | HTML, CSS, and browser JavaScript |
-| Backend | Node.js 20 and Express |
-| Database | PostgreSQL using `pg` |
-| Sessions | `express-session` with `connect-pg-simple` |
-| Media | Private Google Cloud Storage objects |
-| API hosting | Google Cloud Run |
+| Backend | Firebase Functions 2nd gen, Express, Firebase Admin SDK |
+| Database | Cloud Firestore |
+| Authentication | Firebase Authentication and verified ID tokens |
+| Media | Cloud Storage for Firebase |
+| API hosting | Firebase Hosting rewrite to Functions |
 | Static hosting | Firebase Hosting |
 
 ## Local setup
@@ -48,7 +48,7 @@ See [Family Access and Sharing](docs/FAMILY_ACCESS.md) for family roles and invi
 
 - Node.js 20 or newer
 - npm
-- PostgreSQL
+- Firebase CLI and (for local development) the Emulator Suite
 
 ### Installation
 
@@ -58,14 +58,12 @@ See [Family Access and Sharing](docs/FAMILY_ACCESS.md) for family roles and invi
    npm install
    ```
 
-2. Copy `.env.example` to `.env` and set at least:
+2. Select the Firebase project and install Functions dependencies:
 
-   ```env
-   DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
-   SESSION_SECRET=replace_with_a_long_random_secret
+   ```bash
+   firebase use family-tree-a4c4f
+   cd functions && npm install && cd ..
    ```
-
-   For a trusted local PostgreSQL server without TLS, also set `DATABASE_SSL=false`. Production connections use TLS by default.
 
 3. Start the application:
 
@@ -75,7 +73,7 @@ See [Family Access and Sharing](docs/FAMILY_ACCESS.md) for family roles and invi
 
 4. Open http://localhost:4000.
 
-Startup creates or migrates the PostgreSQL schema before the HTTP listener starts. `.env` is ignored by Git and must never be committed.
+For local Firebase-only development, run `firebase emulators:start` and use the Functions/Auth/Firestore/Storage emulators. No database URL or session secret is required by the Firebase runtime.
 
 ## Architecture
 
@@ -85,17 +83,14 @@ Browser
   v
 Firebase Hosting
   |-- static files ------> public/
-  `-- /api/** -----------> Cloud Run: lineage-api
+  `-- /api/** -----------> Firebase Functions 2nd gen
                                  |
-                                 +-- Express sessions
-                                 +-- users
-                                 +-- families
-                                 +-- memberships and invitations
-                                 +-- payment submissions and account approvals
-                                 +-- people and relationships by family_id
+                                 +-- Firebase Auth ID-token verification
+                                 +-- Firestore trees, members, people, relationships
+                                 `-- Cloud Storage private media
 ```
 
-Firebase preserves the `__session` cookie for rewritten `/api/**` requests. Express trusts the hosting proxy and keeps session records in PostgreSQL so authentication survives Cloud Run instance changes.
+See [Firebase Native Architecture](docs/FIREBASE_NATIVE_ARCHITECTURE.md) and [Firebase Migration Report](docs/FIREBASE_NATIVE_MIGRATION_REPORT.md) for the migration status. The legacy PostgreSQL server remains in the repository only as historical audit material until feature parity and controlled cutover are complete.
 
 ## Main API groups
 
@@ -121,14 +116,14 @@ Detailed family endpoints and permissions are in [docs/FAMILY_ACCESS.md](docs/FA
 
 ## Testing
 
-The family-access integration test requires a disposable PostgreSQL database:
+The Firebase Functions smoke test is independent of PostgreSQL:
 
 ```powershell
-$env:DATABASE_URL='postgresql://postgres:password@127.0.0.1:55432/lineage_test'
-$env:DATABASE_SSL='false'
-$env:SESSION_SECRET='local-test-secret'
+cd functions
 npm test
 ```
+
+The legacy family-access integration test remains quarantined until its Firebase repository replacement is complete. It must not be pointed at production data.
 
 ## Deployment and collaboration
 
