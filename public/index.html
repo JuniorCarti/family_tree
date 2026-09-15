@@ -75,6 +75,10 @@
         <p id="authSubtitle" class="auth-subtitle">Continue building the story your family shares.</p>
       </div>
       <form id="authForm" class="auth-form">
+        <div id="bootError" class="hidden auth-error" role="alert">
+          <span>We couldn't connect to Lineage right now. Please try again.</span>
+          <button type="button" id="bootRetryBtn" class="boot-retry-btn">Retry</button>
+        </div>
         <div id="authError" class="hidden auth-error"></div>
         <div id="inviteNotice" class="hidden invite-notice"></div>
 
@@ -109,6 +113,14 @@
 
         <button type="submit" class="btn btn-primary"
           style="width: 100%; margin-top: 10px; padding: 12px; font-size: 15px;" id="authSubmitBtn">Sign In</button>
+
+        <div class="auth-provider-divider"><span>or continue with</span></div>
+        <button type="button" class="btn btn-ghost" id="googleAuthBtn" style="width:100%;">Continue with Google</button>
+        <div class="field-row" style="margin-top:10px;"><label for="phoneAuthNumber">Phone (international format)</label><input id="phoneAuthNumber" type="tel" placeholder="+254..." autocomplete="tel" /></div>
+        <div id="phoneRecaptcha" style="margin:8px 0;"></div>
+        <button type="button" class="btn btn-ghost" id="phoneAuthBtn" style="width:100%;">Send phone code</button>
+        <div class="field-row hidden" id="phoneCodeRow" style="margin-top:10px;"><label for="phoneAuthCode">SMS code</label><input id="phoneAuthCode" inputmode="numeric" autocomplete="one-time-code" /></div>
+        <button type="button" class="btn btn-ghost hidden" id="phoneVerifyBtn" style="width:100%;">Verify phone code</button>
 
         <div style="text-align: center; margin-top: 20px; font-size: 13px;">
           <a href="#" id="authToggleLink" style="color: var(--gold-deep); font-weight: 500;">Don't have an account? Sign
@@ -1022,6 +1034,9 @@
 
   <script src="/tree-layout.js?v=exploration3"></script>
   <script src="/explorer.js?v=exploration3"></script>
+  <script src="/boot-state.js?v=incident1"></script>
+  <script src="/firebase-config.js?v=production1"></script>
+  <script src="/firebase-client.js?v=firebase1"></script>
   <script src="/app.js?v=exploration3"></script>
   <script src="/archive.js?v=exploration3"></script>
   <script src="/evidence.js?v=release45b"></script>
