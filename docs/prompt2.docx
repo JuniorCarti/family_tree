@@ -1,0 +1,1629 @@
+# LINEAGE — FINAL FIREBASE MIGRATION, FEATURE PARITY & PRODUCTION CUTOVER
+
+Continue from the current `migration/firebase-native` work.
+
+Do NOT restart the migration.
+
+The current status is:
+
+```text
+FRONTEND:
+Firebase Hosting — working
+
+AUTHENTICATION:
+Firebase Auth implemented server-side
+Frontend integration pending
+
+DATABASE:
+Firestore configured in code
+Production Firestore database not yet created
+
+STORAGE:
+Rules configured
+Frontend/API upload integration pending
+
+BACKEND:
+Firebase Functions 2nd Gen implemented
+
+FIRESTORE RULES:
+Configured
+Emulator validation pending
+
+STORAGE RULES:
+Configured
+Validation pending
+
+TREE CRUD:
+Implemented
+
+RELATIONSHIPS:
+Implemented
+
+CROSS-USER SECURITY:
+Implemented conceptually
+Automated proof pending
+
+RENDER:
+Removed from new Firebase architecture
+
+CLOUD RUN:
+Legacy lineage-api retained temporarily
+
+POSTGRESQL:
+Not part of new Firebase runtime
+```
+
+The goal of this continuation is:
+
+# COMPLETE THE FIREBASE APPLICATION AND PERFORM THE CONTROLLED PRODUCTION CUTOVER.
+
+Do not stop at "configured."
+
+The final result must be a functioning production application at:
+
+```text
+https://family-tree-a4c4f.web.app/
+```
+
+with no runtime dependence on Render, PostgreSQL, or the legacy Cloud Run API.
+
+---
+
+# 1. DO NOT DELETE CLOUD RUN YET
+
+Keep the old:
+
+```text
+lineage-api
+```
+
+service temporarily.
+
+It is obsolete architecturally but must remain untouched until:
+
+```text
+Firebase production deployed
+Firebase authentication works
+Firestore works
+Functions work
+uploads work
+feature parity is acceptable
+production smoke tests pass
+```
+
+Only after successful production verification may it be classified as safe to retire.
+
+Do not use it as the new application's backend.
+
+---
+
+# 2. FIRST AUDIT THE CURRENT MIGRATION WORK
+
+Before changing code:
+
+```bash
+git status
+git branch --show-current
+git log --oneline --decorate -15
+```
+
+Review all Firebase migration files already created.
+
+Inspect:
+
+```text
+firebase.json
+.firebaserc
+
+firestore.rules
+firestore.indexes.json
+storage.rules
+
+functions/
+public/
+
+docs/FIREBASE_NATIVE_ARCHITECTURE.md
+docs/FIREBASE_NATIVE_MIGRATION_REPORT.md
+docs/POSTGRES_TO_FIREBASE_MIGRATION_MAP.md
+```
+
+Do not duplicate working implementations.
+
+Continue from what exists.
+
+---
+
+# 3. CREATE A GAP MATRIX
+
+Before coding, inspect the newest intended pre-Firebase application and compare it to the Firebase implementation.
+
+Create:
+
+```text
+docs/FIREBASE_FEATURE_PARITY_MATRIX.md
+```
+
+Use:
+
+| Feature | Legacy | Firebase | Frontend | Backend | Tested | Production Ready |
+| ------- | ------ | -------- | -------- | ------- | ------ | ---------------- |
+
+Include every discovered feature.
+
+At minimum investigate:
+
+```text
+signup
+login
+logout
+session persistence
+password reset
+email verification
+
+account approval
+user profile
+
+family tree loading
+family tree naming
+
+persons
+person editing
+person deletion
+
+parent-child relationships
+spouse relationships
+relationship deletion
+
+tree exploration/navigation
+tree layout
+
+memories
+evidence
+documents
+
+sharing
+invitations
+
+imports
+exports
+
+photos/uploads
+
+payments
+M-Pesa
+admin functions
+
+error/recovery UI
+```
+
+Do not assume every listed feature exists.
+
+Use actual repository evidence.
+
+---
+
+# 4. FIREBASE PROJECT PRE-FLIGHT
+
+Inspect current Firebase project configuration.
+
+Confirm:
+
+```text
+Firebase project ID
+Hosting site
+Functions region
+existing Auth configuration
+existing Firestore state
+existing Storage state
+```
+
+Do NOT accidentally create resources in another Firebase project.
+
+The existing production Hosting site is:
+
+```text
+family-tree-a4c4f.web.app
+```
+
+All production resources must belong to the intended project.
+
+---
+
+# 5. FIRESTORE PRODUCTION REGION
+
+Production Firestore has not yet been created.
+
+This is an important irreversible infrastructure decision.
+
+Before creating it:
+
+1. Identify the Firebase/GCP project currently serving `family-tree-a4c4f.web.app`.
+2. Inspect the regions used by Firebase Functions and Storage.
+3. Select an appropriate supported Firestore location.
+4. Prefer reasonable regional alignment between:
+
+   * Firestore
+   * Functions
+   * Storage
+5. Document the selected location.
+
+Create/update:
+
+```text
+docs/FIREBASE_NATIVE_ARCHITECTURE.md
+```
+
+with:
+
+```text
+Hosting:
+Authentication:
+Firestore location:
+Functions region:
+Storage location:
+```
+
+Do not choose a region randomly.
+
+---
+
+# 6. CREATE FIRESTORE
+
+If authenticated CLI/project access permits safe production creation:
+
+create Firestore in the approved location.
+
+If creation requires an irreversible console action unavailable to the environment, stop ONLY that infrastructure action and document the exact command/console step required.
+
+Continue all locally testable work.
+
+Do not pretend Firestore exists if it does not.
+
+---
+
+# 7. COMPLETE FRONTEND FIREBASE AUTH
+
+This is now P0.
+
+The browser must use Firebase Authentication.
+
+Implement/configure the Firebase Web SDK.
+
+The frontend needs:
+
+```text
+initializeApp()
+getAuth()
+```
+
+and appropriate authentication flows.
+
+Support:
+
+```text
+signup
+login
+logout
+auth-state restoration
+password reset
+email verification if used
+```
+
+Use:
+
+```javascript
+onAuthStateChanged(...)
+```
+
+or the appropriate current Firebase mechanism for restoring auth state.
+
+Do not continue relying on:
+
+```text
+express-session
+__session
+/api/auth/session backed by PostgreSQL
+```
+
+---
+
+# 8. AUTHENTICATED FUNCTIONS REQUESTS
+
+Where frontend requests privileged API operations through Functions:
+
+obtain the Firebase ID token.
+
+Concept:
+
+```javascript
+const token = await user.getIdToken();
+```
+
+Send:
+
+```http
+Authorization: Bearer <token>
+```
+
+The Functions authentication middleware must verify:
+
+```javascript
+admin.auth().verifyIdToken(token)
+```
+
+Use the verified:
+
+```text
+uid
+```
+
+for ownership.
+
+Never trust a frontend-provided UID.
+
+---
+
+# 9. AUTH BOOT SEQUENCE
+
+Rewrite application initialization carefully.
+
+Desired behavior:
+
+```text
+load page
+↓
+initialize Firebase
+↓
+initialize Firebase Auth
+↓
+wait for initial auth state
+↓
+authenticated
+    → load application
+unauthenticated
+    → show login/register
+error
+    → show recovery UI
+```
+
+The previous blank-screen failure must never return.
+
+There must always be:
+
+```text
+loading state
+authenticated UI
+login UI
+or error UI
+```
+
+Never an unexplained blank page.
+
+---
+
+# 10. FIREBASE WEB CONFIG
+
+Use the correct Firebase Web configuration for the existing project.
+
+Remember:
+
+Firebase Web config values such as:
+
+```text
+apiKey
+authDomain
+projectId
+storageBucket
+messagingSenderId
+appId
+```
+
+are identifiers/configuration rather than server-side secrets.
+
+However:
+
+Do not put:
+
+```text
+Firebase Admin private keys
+service-account JSON
+payment secrets
+SMTP secrets
+M-Pesa secrets
+```
+
+in frontend JavaScript.
+
+---
+
+# 11. PRESERVE API CONTRACTS WHERE USEFUL
+
+If existing frontend logic already calls:
+
+```text
+/api/tree
+/api/persons
+/api/relationships
+```
+
+the Functions backend may preserve these interfaces.
+
+But eliminate legacy session assumptions internally.
+
+Example:
+
+```text
+GET /api/tree
+Authorization: Bearer <Firebase ID token>
+```
+
+Do not force a total frontend rewrite where an authenticated API abstraction already works well.
+
+---
+
+# 12. COMPLETE TREE FRONTEND INTEGRATION
+
+Connect the frontend to the Firebase Functions implementation.
+
+Verify:
+
+```text
+load tree
+create person
+edit person
+delete person
+create relationship
+delete relationship
+rename tree
+```
+
+No frontend action may call the old Cloud Run service.
+
+---
+
+# 13. RELATIONSHIP SAFETY
+
+Validate all relationship operations server-side.
+
+Before creating an edge:
+
+```text
+person1 exists
+person2 exists
+person1 != person2 where appropriate
+both persons belong to the same tree
+authenticated user may modify that tree
+relationship type is valid
+```
+
+On person deletion:
+
+remove or otherwise safely handle associated relationships.
+
+Use Firestore batches or transactions where appropriate.
+
+---
+
+# 14. COMPLETE PHOTO UPLOADS
+
+Photo upload is currently incomplete.
+
+Finish it.
+
+Target:
+
+```text
+frontend
+↓
+Firebase Storage
+↓
+secure object
+↓
+Firestore stores reference/path
+```
+
+or use a privileged Function where server validation is required.
+
+Validate:
+
+```text
+authenticated user
+tree ownership
+person ownership
+MIME type
+file size
+supported extension
+```
+
+Reject unsuitable files.
+
+Do not use local filesystem storage.
+
+Do not use `public/uploads`.
+
+---
+
+# 15. PHOTO REPLACEMENT / DELETION
+
+If a profile image is replaced:
+
+avoid indefinitely orphaning old Storage objects.
+
+If a person is deleted:
+
+decide whether their owned Storage object should also be deleted.
+
+Implement consistent cleanup.
+
+Do not accidentally delete externally referenced URLs.
+
+---
+
+# 16. MEMORIES AND EVIDENCE
+
+The status report says feature parity is incomplete for:
+
+```text
+memories
+evidence
+```
+
+Inspect the actual legacy implementation.
+
+Determine:
+
+```text
+schema
+frontend behavior
+authorization
+attachments
+relationships to persons
+```
+
+Implement Firebase equivalents if these are current intended features.
+
+Possible model:
+
+```text
+trees/{treeId}/persons/{personId}/memories/{memoryId}
+
+trees/{treeId}/persons/{personId}/evidence/{evidenceId}
+```
+
+But derive the actual model from application requirements.
+
+Do not invent features not present in the intended product.
+
+---
+
+# 17. SHARING / INVITATIONS
+
+Inspect the legacy tree-sharing functionality.
+
+If users can share a family tree, design secure membership.
+
+Possible:
+
+```text
+trees/{treeId}/members/{uid}
+```
+
+Fields could include:
+
+```text
+role
+status
+invitedAt
+joinedAt
+```
+
+Potential roles:
+
+```text
+owner
+editor
+viewer
+```
+
+Only implement roles actually required.
+
+Functions and Firestore Rules must both enforce access.
+
+Never depend solely on hidden frontend buttons.
+
+---
+
+# 18. APPROVAL WORKFLOW
+
+If account approval is part of the latest production app, migrate it.
+
+Determine states from actual code.
+
+For example:
+
+```text
+pending
+approved
+rejected
+suspended
+```
+
+Authentication and application approval are separate concepts.
+
+A Firebase-authenticated user who is still pending approval must not automatically gain full application access if approval is required.
+
+---
+
+# 19. PAYMENTS / M-PESA
+
+Inspect the intended payment implementation carefully.
+
+Determine whether payments are genuinely part of the current production product.
+
+If so:
+
+move trusted payment logic to Firebase Functions.
+
+Secrets must use secure server-side secret configuration.
+
+Never expose:
+
+```text
+consumer secret
+API secret
+passkey
+private credentials
+callback verification secrets
+```
+
+to frontend code.
+
+Payment status must only be changed from trusted server-side paths.
+
+---
+
+# 20. IMPORTS
+
+If tree/person imports exist:
+
+implement them securely against Firestore.
+
+Validate:
+
+```text
+file size
+format
+schema
+ownership
+duplicate handling
+relationship references
+```
+
+Imports must not allow users to write data into another user's tree.
+
+---
+
+# 21. EXPORTS
+
+Preserve export functionality if currently supported.
+
+Exports should reconstruct the user's authorized tree only.
+
+Test:
+
+```text
+person counts
+relationship counts
+field preservation
+encoding
+dates
+```
+
+Do not expose another user's data through an ID substitution attack.
+
+---
+
+# 22. PASSWORD RESET
+
+Use Firebase Authentication password reset.
+
+Do not reimplement insecure legacy password reset endpoints.
+
+Remove/bypass any legacy mechanism where knowing an email or public identifier alone allows password replacement.
+
+---
+
+# 23. EMAIL VERIFICATION
+
+If verification is required:
+
+use Firebase Auth email verification where practical.
+
+UI states should include:
+
+```text
+unverified
+verification sent
+verified
+resend verification
+```
+
+Do not make the application unusable due to stale cached `emailVerified` state.
+
+Refresh authentication state appropriately.
+
+---
+
+# 24. EMULATOR SUITE
+
+This is a RELEASE GATE.
+
+Configure/run Firebase Emulator Suite for applicable services:
+
+```text
+Auth
+Firestore
+Functions
+Storage
+Hosting
+```
+
+Do not proceed to production cutover without security testing unless the tooling itself is genuinely blocked.
+
+---
+
+# 25. FIRESTORE RULE TESTS
+
+Add automated rules tests.
+
+Must prove:
+
+### Anonymous
+
+```text
+cannot read private tree
+cannot create private tree
+cannot modify private tree
+```
+
+### User A
+
+```text
+can read A's authorized tree
+can create A's person
+can update A's person
+can create A's relationship
+```
+
+### User B
+
+```text
+cannot read A's private tree
+cannot modify A's person
+cannot delete A's relationship
+```
+
+### Shared tree
+
+If sharing exists:
+
+```text
+viewer can read
+viewer cannot edit
+editor can perform intended edits
+non-member cannot access
+```
+
+Use tests, not assumptions.
+
+---
+
+# 26. STORAGE RULE TESTS
+
+Prove:
+
+```text
+anonymous upload denied
+cross-user upload denied
+owner upload accepted
+oversized upload rejected
+unsupported MIME rejected where rules support it
+```
+
+---
+
+# 27. FUNCTIONS API TESTS
+
+Test protected Functions routes.
+
+At minimum:
+
+```text
+missing token
+invalid token
+valid User A token
+User A accessing User B resource
+invalid tree
+invalid person
+invalid relationship
+normal CRUD
+```
+
+Expected behavior must use appropriate HTTP statuses.
+
+Do not leak stack traces.
+
+---
+
+# 28. USE FIRESTORE EMULATOR FOR CRUD TESTING
+
+Test:
+
+```text
+create tree
+create person
+update person
+create second person
+connect people
+load graph
+delete relationship
+delete person
+delete tree
+```
+
+Check for orphaned documents.
+
+---
+
+# 29. TEST TREE GRAPH VISUALLY
+
+Run the frontend against the Firebase Emulator/backend.
+
+Create a representative family:
+
+```text
+grandparents
+parents
+children
+spouses
+siblings
+```
+
+Verify rendering.
+
+Firebase migration must not alter graph semantics.
+
+---
+
+# 30. SERVICE WORKER
+
+Review current service-worker behavior.
+
+Increment cache version where appropriate.
+
+Never cache:
+
+```text
+Authorization headers
+authenticated API JSON
+tokens
+sensitive responses
+```
+
+Ensure deployment activates the new Firebase frontend rather than stale Cloud Run-era JavaScript.
+
+---
+
+# 31. REMOVE FRONTEND LEGACY AUTH REFERENCES
+
+After Firebase Auth integration succeeds:
+
+search:
+
+```bash
+git grep -n "/api/auth/session"
+git grep -n "__session"
+git grep -n "SESSION_SECRET"
+git grep -n "req.session"
+```
+
+Classify each occurrence.
+
+Legacy documentation can mention old architecture.
+
+Production frontend/runtime must not depend on it.
+
+---
+
+# 32. REMOVE OLD API DESTINATIONS
+
+Search for:
+
+```text
+lineage-api
+run.app
+render.com
+DATABASE_URL
+PostgreSQL hostnames
+```
+
+No production browser code may reference them.
+
+---
+
+# 33. PRODUCTION FIRESTORE INITIALIZATION
+
+Before first live user access:
+
+ensure any required bootstrap data exists.
+
+Examples:
+
+```text
+admin custom claim
+configuration documents
+payment configuration metadata
+feature flags
+```
+
+Do not seed fake user/family data into production.
+
+---
+
+# 34. HISTORICAL DATA
+
+Existing confirmed recoverable source currently consists only of:
+
+```text
+partial Excel artifact
+1 person
+0 relationships
+```
+
+Do not represent this as a complete migration.
+
+If appropriate, build an explicit manual recovery/import mechanism.
+
+But do NOT let unavailable historical PostgreSQL data block the Firebase-native application from becoming operational.
+
+Document the limitation transparently.
+
+---
+
+# 35. DO NOT INVENT OLD USER ACCOUNTS
+
+Original PostgreSQL user/password records are currently unavailable.
+
+Do not fabricate Firebase Auth users.
+
+For production launch determine an appropriate account recovery policy.
+
+Possible options include:
+
+```text
+new registration
+password reset only when email identity is known
+manual administrative recovery where evidence exists
+```
+
+Choose based on recoverable account information.
+
+Never guess email/password data.
+
+---
+
+# 36. FIREBASE AUTHORIZED DOMAINS
+
+Verify the production Hosting domain is authorized for Firebase Authentication.
+
+Include:
+
+```text
+family-tree-a4c4f.web.app
+```
+
+and any other intentional production domain.
+
+Do not add arbitrary domains.
+
+---
+
+# 37. DEPLOYMENT PRE-FLIGHT
+
+Before deployment produce:
+
+```text
+docs/FIREBASE_PRODUCTION_CUTOVER_CHECKLIST.md
+```
+
+Every item must be explicit PASS/FAIL.
+
+Include:
+
+```text
+Firebase project confirmed
+Firestore created
+Auth configured
+authorized domains configured
+Functions region confirmed
+Storage configured
+Firestore Rules tests pass
+Storage Rules tests pass
+Functions tests pass
+frontend Firebase config correct
+no Render URLs
+no Cloud Run URLs
+service-worker cache updated
+feature parity acceptable
+production secrets configured
+```
+
+No vague "looks good."
+
+---
+
+# 38. DEPLOY FIREBASE COMPONENTS
+
+Once gates pass, deploy Firebase components carefully.
+
+Use the actual project's supported deployment commands.
+
+Typically components will include:
+
+```text
+functions
+firestore rules
+firestore indexes
+storage rules
+hosting
+```
+
+Do not invent success.
+
+Capture deployment output.
+
+---
+
+# 39. PRODUCTION NETWORK TEST
+
+After deployment inspect:
+
+```text
+https://family-tree-a4c4f.web.app/
+```
+
+Use an extension-free browser.
+
+Check Network.
+
+There must be:
+
+```text
+0 requests to Render
+0 requests to old lineage-api Cloud Run
+```
+
+for normal application runtime.
+
+Firebase Auth/Functions/Firestore/Storage traffic is expected.
+
+---
+
+# 40. PRODUCTION AUTH TEST
+
+Create a controlled test user.
+
+Verify:
+
+```text
+registration
+login
+refresh page
+auth state preserved
+logout
+login again
+password reset flow
+email verification if enabled
+```
+
+Do not use an actual user's account for destructive testing.
+
+---
+
+# 41. PRODUCTION TREE TEST
+
+With the test user:
+
+```text
+create tree
+create person A
+create person B
+create relationship
+reload
+confirm graph
+edit person
+upload photo
+reload
+remove relationship
+delete test data
+```
+
+Everything must persist through Firebase.
+
+---
+
+# 42. PRODUCTION SECURITY TEST
+
+Use two controlled accounts.
+
+Create:
+
+```text
+Account A
+Account B
+```
+
+Attempt cross-user access.
+
+A must not access B.
+
+B must not access A.
+
+Test through both:
+
+```text
+frontend/API
+direct Firestore rules where tooling permits
+Storage
+```
+
+Security failure blocks cutover completion.
+
+---
+
+# 43. PRODUCTION ERROR BEHAVIOR
+
+Temporarily simulate or locally test backend failure behavior.
+
+Confirm users get:
+
+```text
+meaningful error
+Retry
+```
+
+not a blank page.
+
+---
+
+# 44. VERIFY NO POSTGRESQL RUNTIME
+
+Search runtime code:
+
+```bash
+git grep -ni "DATABASE_URL"
+git grep -ni "connect-pg-simple"
+git grep -ni "pool.query"
+git grep -ni "new Pool"
+git grep -ni "postgres"
+```
+
+No Firebase runtime code should require PostgreSQL.
+
+Migration/history documentation may still reference it.
+
+---
+
+# 45. VERIFY NO RENDER RUNTIME
+
+Run:
+
+```bash
+git grep -ni "render.com"
+git grep -ni "render"
+```
+
+Classify every hit.
+
+Expected production dependencies:
+
+```text
+0
+```
+
+Historical docs may retain mentions.
+
+---
+
+# 46. VERIFY NO CLOUD RUN RUNTIME
+
+Search for:
+
+```text
+lineage-api
+run.app
+```
+
+Firebase Hosting must no longer rewrite to Cloud Run.
+
+Normal production application activity must not hit Cloud Run.
+
+---
+
+# 47. UPDATE MIGRATION REPORT
+
+Update:
+
+```text
+docs/FIREBASE_NATIVE_MIGRATION_REPORT.md
+```
+
+Replace old intermediate statuses with verified results.
+
+Do not leave:
+
+```text
+IMPLEMENTED
+CONFIGURED
+PENDING
+```
+
+when an item has actually been tested.
+
+Use:
+
+```text
+PASS
+FAIL
+NOT IMPLEMENTED
+BLOCKED
+NOT APPLICABLE
+```
+
+where possible.
+
+---
+
+# 48. UPDATE ARCHITECTURE
+
+Update:
+
+```text
+docs/FIREBASE_NATIVE_ARCHITECTURE.md
+```
+
+with the exact final architecture.
+
+Expected:
+
+```text
+                    Internet
+                       │
+                       ▼
+              Firebase Hosting
+                       │
+              ┌────────┴────────┐
+              │                 │
+              ▼                 ▼
+        Firebase Auth      /api/** Functions
+                                  │
+                        ┌─────────┴──────────┐
+                        ▼                    ▼
+                    Firestore            Storage
+```
+
+Adjust based on actual implementation.
+
+There should be no Render/PostgreSQL box.
+
+---
+
+# 49. CLOUD RUN RETIREMENT DECISION
+
+Only after all production tests pass:
+
+mark:
+
+```text
+lineage-api
+```
+
+as:
+
+```text
+SAFE TO RETIRE
+```
+
+Do not delete automatically unless deletion is explicitly safe and credentials/permissions permit.
+
+Document its:
+
+```text
+service name
+region
+last revision
+reason for retirement
+```
+
+If deletion is performed, verify Firebase production again immediately afterward.
+
+---
+
+# 50. FINAL GIT QUALITY
+
+Review:
+
+```bash
+git status
+git diff --stat
+git diff
+```
+
+Ensure:
+
+```text
+no secrets
+no service account keys
+no database dumps
+no private exports
+no accidentally committed emulator data
+```
+
+Ensure `.gitignore` protects local/private files.
+
+---
+
+# 51. FINAL TEST MATRIX
+
+Produce a concise matrix:
+
+| Area                    | Result        |
+| ----------------------- | ------------- |
+| Firebase Hosting        | PASS/FAIL     |
+| Firebase Auth           | PASS/FAIL     |
+| Firestore               | PASS/FAIL     |
+| Functions               | PASS/FAIL     |
+| Storage                 | PASS/FAIL     |
+| Firestore Rules         | PASS/FAIL     |
+| Storage Rules           | PASS/FAIL     |
+| Cross-user security     | PASS/FAIL     |
+| Tree CRUD               | PASS/FAIL     |
+| Relationships           | PASS/FAIL     |
+| Photos                  | PASS/FAIL     |
+| Sharing                 | PASS/FAIL/N/A |
+| Approvals               | PASS/FAIL/N/A |
+| Payments                | PASS/FAIL/N/A |
+| Memories                | PASS/FAIL/N/A |
+| Evidence                | PASS/FAIL/N/A |
+| Imports                 | PASS/FAIL/N/A |
+| Exports                 | PASS/FAIL/N/A |
+| Blank-page recovery     | PASS/FAIL     |
+| Render dependency       | ZERO/REMAINS  |
+| PostgreSQL dependency   | ZERO/REMAINS  |
+| Cloud Run runtime calls | ZERO/REMAINS  |
+
+---
+
+# 52. REQUIRED FINAL TERMINAL OUTPUT
+
+When finished output:
+
+```text
+================================================================
+LINEAGE — FIREBASE PRODUCTION CUTOVER FINAL RESULT
+================================================================
+
+STATUS:
+COMPLETE / PARTIAL / BLOCKED
+
+PRODUCTION:
+https://family-tree-a4c4f.web.app/
+
+FIREBASE PROJECT:
+<project>
+
+FIRESTORE LOCATION:
+<location>
+
+FUNCTIONS REGION:
+<region>
+
+---------------------------------------------------------------
+CORE FIREBASE
+---------------------------------------------------------------
+
+HOSTING:
+PASS / FAIL
+
+AUTH:
+PASS / FAIL
+
+FIRESTORE:
+PASS / FAIL
+
+FUNCTIONS 2ND GEN:
+PASS / FAIL
+
+STORAGE:
+PASS / FAIL
+
+---------------------------------------------------------------
+SECURITY
+---------------------------------------------------------------
+
+FIRESTORE RULE TESTS:
+PASS / FAIL
+
+STORAGE RULE TESTS:
+PASS / FAIL
+
+FUNCTION AUTH TESTS:
+PASS / FAIL
+
+CROSS-USER ISOLATION:
+PASS / FAIL
+
+---------------------------------------------------------------
+APPLICATION
+---------------------------------------------------------------
+
+REGISTER:
+PASS / FAIL
+
+LOGIN:
+PASS / FAIL
+
+AUTH PERSISTENCE:
+PASS / FAIL
+
+LOGOUT:
+PASS / FAIL
+
+PASSWORD RESET:
+PASS / FAIL / N/A
+
+EMAIL VERIFICATION:
+PASS / FAIL / N/A
+
+TREE LOAD:
+PASS / FAIL
+
+PERSON CREATE:
+PASS / FAIL
+
+PERSON UPDATE:
+PASS / FAIL
+
+PERSON DELETE:
+PASS / FAIL
+
+RELATIONSHIP CREATE:
+PASS / FAIL
+
+RELATIONSHIP DELETE:
+PASS / FAIL
+
+PHOTO UPLOAD:
+PASS / FAIL
+
+SHARING:
+PASS / FAIL / N/A
+
+APPROVAL:
+PASS / FAIL / N/A
+
+PAYMENTS:
+PASS / FAIL / N/A
+
+MEMORIES:
+PASS / FAIL / N/A
+
+EVIDENCE:
+PASS / FAIL / N/A
+
+IMPORT:
+PASS / FAIL / N/A
+
+EXPORT:
+PASS / FAIL / N/A
+
+BLANK-PAGE RECOVERY:
+PASS / FAIL
+
+---------------------------------------------------------------
+LEGACY INFRASTRUCTURE
+---------------------------------------------------------------
+
+RENDER RUNTIME DEPENDENCY:
+ZERO / REMAINS
+
+POSTGRESQL RUNTIME DEPENDENCY:
+ZERO / REMAINS
+
+DATABASE_URL REQUIRED:
+NO / YES
+
+EXPRESS SESSION REQUIRED:
+NO / YES
+
+OLD CLOUD RUN REQUESTS:
+0 / <number>
+
+CLOUD RUN LINEAGE-API:
+SAFE TO RETIRE / NOT SAFE TO RETIRE
+
+---------------------------------------------------------------
+PRODUCTION NETWORK
+---------------------------------------------------------------
+
+REQUESTS TO RENDER:
+0 / <number>
+
+REQUESTS TO OLD CLOUD RUN:
+0 / <number>
+
+FIRST-PARTY CONSOLE ERRORS:
+0 / <number>
+
+---------------------------------------------------------------
+HISTORICAL RECOVERY
+---------------------------------------------------------------
+
+RECOVERED:
+<summary>
+
+UNAVAILABLE:
+<summary>
+
+---------------------------------------------------------------
+DOCUMENTATION
+---------------------------------------------------------------
+
+FEATURE PARITY MATRIX:
+docs/FIREBASE_FEATURE_PARITY_MATRIX.md
+
+ARCHITECTURE:
+docs/FIREBASE_NATIVE_ARCHITECTURE.md
+
+MIGRATION REPORT:
+docs/FIREBASE_NATIVE_MIGRATION_REPORT.md
+
+CUTOVER CHECKLIST:
+docs/FIREBASE_PRODUCTION_CUTOVER_CHECKLIST.md
+
+---------------------------------------------------------------
+
+FINAL VERDICT:
+
+<one concise explanation of whether Lineage is now completely
+Firebase-native and safe to run without Render/PostgreSQL>
+
+================================================================
+```
+
+# FINAL SUCCESS STANDARD
+
+Do not declare the migration complete because Firebase code exists.
+
+Declare it complete only when:
+
+```text
+frontend Firebase Auth works
+Firestore production works
+Functions production works
+Storage works
+security tests pass
+tree features work
+required feature parity is restored
+production is deployed
+production is smoke-tested
+Render receives zero runtime traffic
+PostgreSQL is unnecessary
+old Cloud Run receives zero runtime traffic
+```
+
+The intended final state is:
+
+# LINEAGE RUNS ENTIRELY ON FIREBASE.
+
+Render and PostgreSQL are no longer required for production operation.

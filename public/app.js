@@ -9,15 +9,22 @@ const SPOUSE_GAP = 14;     // gap between spouse cards within a unit
 const SIBLING_GAP = 36;    // gap between adjacent sibling units
 const ROW_HEIGHT = 150;    // vertical distance between generations
 const PADDING = 80;
+const MIN_ZOOM = 0.01;
+const MAX_ZOOM = 2;
 
 let state = {
   persons: [],
+  personIndex: new Map(),
   relationships: [],
+  projection: null,
   tree: null,
+  layout: null,
+  positionedTreeId: null,
   selectedId: null,
   zoom: 1,
   panX: 0,
   panY: 0,
+  showKinshipLines: false,
 };
 
 // ------------------------------------------------------------------ helpers
@@ -25,7 +32,7 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
 function personById(id) {
-  return state.persons.find((p) => p.id === id);
+  return state.personIndex.get(id);
 }
 function fullName(p) {
   if (!p) return 'Unknown';
@@ -51,10 +58,21 @@ function initials(p) {
 let currentUser = null;
 
 async function api(path, opts = {}) {
-  const res = await fetch(`${API}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-  });
+  const method = String(opts.method || 'GET').toUpperCase();
+  if (!navigator.onLine && method !== 'GET') {
+    const queue = JSON.parse(localStorage.getItem('lineage-offline-queue') || '[]');
+    queue.push({ path, method, body: opts.body || null, queued_at: new Date().toISOString() });
+    localStorage.setItem('lineage-offline-queue', JSON.stringify(queue));
+    document.body.classList.add('offline-mode');
+    return { queued: true, offline: true };
+  }
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  // Firebase Auth integration can provide an ID token without reintroducing
+  // cookies or PostgreSQL sessions. The legacy path remains compatible while
+  // the Web SDK configuration is staged for cutover.
+  const firebaseUser = window.LineageFirebaseAuth?.currentUser;
+  if (firebaseUser?.getIdToken) headers.Authorization = `Bearer ${await firebaseUser.getIdToken()}`;
+  const res = await fetch(`${API}${path}`, { ...opts, headers });
   if (res.status === 401) {
     currentUser = null;
     $('#app').classList.add('hidden');
@@ -72,12 +90,36 @@ async function api(path, opts = {}) {
 // ------------------------------------------------------------------ data load
 async function loadTree() {
   const data = await api('/tree');
+  window.LineageExplorer?.configureHost({
+    api: (path, options) => api(String(path).replace(/^\/api/, ''), options),
+    hasFamilyRole,
+    renderProjection(projected) {
+      state.projection = projected;
+      state.layout = null;
+      render();
+    },
+    openPerson(id) {
+      selectPerson(id);
+    },
+  });
+  const shouldFitOnMobile = state.positionedTreeId !== data.tree?.id;
   state.persons = data.persons;
+  state.personIndex = new Map(data.persons.map((person) => [person.id, person]));
   state.relationships = data.relationships;
+  state.projection = { persons: data.persons, relationships: data.relationships };
   state.tree = data.tree;
+  state.layout = null;
   $('#treeName').value = data.tree?.name || 'My Family Tree';
+  $('#treeName').readOnly = !hasFamilyRole('admin');
   $('#personCount').textContent = `${state.persons.length} ${state.persons.length === 1 ? 'person' : 'people'}`;
-  render();
+  if (window.LineageExplorer) {
+    window.LineageExplorer.setData({ persons: data.persons, relationships: data.relationships });
+  } else {
+    render();
+  }
+  if (shouldFitOnMobile && window.matchMedia('(max-width: 900px)').matches) fitTreeToViewport();
+  state.positionedTreeId = data.tree?.id || null;
+  await window.loadArchiveOverview?.();
 }
 
 // ------------------------------------------------------------------ relationship maps
@@ -230,188 +272,39 @@ function buildMaps() {
   };
 }
 
-// ------------------------------------------------------------------ union-find for spouse units
-function buildUnits(spousesOf) {
-  const parent = new Map(state.persons.map((p) => [p.id, p.id]));
-  function find(x) { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; }
-  function union(a, b) { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); }
-
-  for (const [a, spouses] of spousesOf.entries()) {
-    for (const b of spouses) union(a, b);
-  }
-
-  const groups = new Map(); // rootId -> [memberIds]
-  for (const p of state.persons) {
-    const root = find(p.id);
-    if (!groups.has(root)) groups.set(root, []);
-    groups.get(root).push(p.id);
-  }
-
-  const unitOf = new Map(); // personId -> unitId (use root id as unit id)
-  const units = new Map(); // unitId -> { id, members: [] }
-  let i = 0;
-  for (const [root, members] of groups.entries()) {
-    // sort members: keep stable order by original person order
-    members.sort((a, b) => state.persons.findIndex(p => p.id === a) - state.persons.findIndex(p => p.id === b));
-    const unitId = `u${i++}`;
-    units.set(unitId, { id: unitId, members });
-    for (const m of members) unitOf.set(m, unitId);
-  }
-  return { units, unitOf };
-}
-
-// ------------------------------------------------------------------ generation computation
-function computeGenerations(parentsOf, spousesOf) {
-  const gen = new Map();
-  const ids = state.persons.map((p) => p.id);
-  for (const id of ids) gen.set(id, 0);
-
-  // iterative relaxation: gen(child) >= max(gen(parent))+1 ; spouses share max gen
-  let changed = true;
-  let iterations = 0;
-  while (changed && iterations < ids.length + 20) {
-    changed = false;
-    iterations++;
-    for (const r of state.relationships) {
-      if (r.type === 'parent') {
-        const need = gen.get(r.person1_id) + 1;
-        if (gen.get(r.person2_id) < need) { gen.set(r.person2_id, need); changed = true; }
-      }
-    }
-    for (const [a, spouses] of spousesOf.entries()) {
-      for (const b of spouses) {
-        const m = Math.max(gen.get(a), gen.get(b));
-        if (gen.get(a) < m) { gen.set(a, m); changed = true; }
-        if (gen.get(b) < m) { gen.set(b, m); changed = true; }
-      }
-    }
-  }
-  return gen;
-}
-
 // ------------------------------------------------------------------ layout (positions in px)
 function computeLayout() {
-  const { parentsOf, childrenOf, spousesOf } = buildMaps();
-  const { units, unitOf } = buildUnits(spousesOf);
-  const personGen = computeGenerations(parentsOf, spousesOf);
-
-  // unit generation = min gen among members (should be equal after equalization)
-  const unitGen = new Map();
-  for (const [uid, u] of units.entries()) {
-    unitGen.set(uid, Math.min(...u.members.map((m) => personGen.get(m))));
+  if (!state.layout) {
+    const projected = state.projection || { persons: state.persons, relationships: state.relationships };
+    state.layout = window.LineageTreeLayout.computeTreeLayout(projected.persons, projected.relationships, {
+      cardWidth: CARD_W,
+      cardHeight: CARD_H,
+      spouseGap: SPOUSE_GAP,
+      siblingGap: SIBLING_GAP,
+      rowHeight: ROW_HEIGHT,
+      padding: PADDING,
+    });
   }
-
-  // unit -> child units (dedup), and unit -> parent units (dedup)
-  const unitChildren = new Map();
-  const unitParents = new Map();
-  for (const uid of units.keys()) { unitChildren.set(uid, new Set()); unitParents.set(uid, new Set()); }
-
-  for (const [uid, u] of units.entries()) {
-    for (const m of u.members) {
-      for (const c of (childrenOf.get(m) || [])) {
-        const cu = unitOf.get(c);
-        if (cu && cu !== uid) unitChildren.get(uid).add(cu);
-      }
-      for (const par of (parentsOf.get(m) || [])) {
-        const pu = unitOf.get(par);
-        if (pu && pu !== uid) unitParents.get(uid).add(pu);
-      }
-    }
-  }
-
-  // choose one "layout parent" per unit to build a spanning forest for x-positioning
-  const layoutParent = new Map(); // childUnit -> parentUnit
-  const layoutChildren = new Map(); // parentUnit -> [childUnits] (ordered)
-  for (const uid of units.keys()) layoutChildren.set(uid, []);
-
-  for (const [uid, parents] of unitParents.entries()) {
-    if (parents.size > 0) {
-      const chosen = [...parents][0];
-      layoutParent.set(uid, chosen);
-    }
-  }
-  for (const [child, parent] of layoutParent.entries()) {
-    layoutChildren.get(parent).push(child);
-  }
-  // order children by their own id for stable determinism
-  for (const [k, arr] of layoutChildren.entries()) {
-    arr.sort();
-  }
-
-  const rootUnits = [...units.keys()].filter((uid) => !layoutParent.has(uid));
-  // stable order roots by min member's original index
-  rootUnits.sort((a, b) => {
-    const ai = Math.min(...units.get(a).members.map(m => state.persons.findIndex(p => p.id === m)));
-    const bi = Math.min(...units.get(b).members.map(m => state.persons.findIndex(p => p.id === m)));
-    return ai - bi;
-  });
-
-  function memberWidth(uid) {
-    const n = units.get(uid).members.length;
-    return n * CARD_W + (n - 1) * SPOUSE_GAP;
-  }
-
-  function subtreeWidth(uid) {
-    const kids = layoutChildren.get(uid) || [];
-    if (kids.length === 0) return memberWidth(uid);
-    const kidsWidth = kids.reduce((sum, k) => sum + subtreeWidth(k), 0) + (kids.length - 1) * SIBLING_GAP;
-    return Math.max(memberWidth(uid), kidsWidth);
-  }
-
-  const unitX = new Map(); // center x
-  function placeUnit(uid, leftBound) {
-    const kids = layoutChildren.get(uid) || [];
-    const myWidth = subtreeWidth(uid);
-    if (kids.length === 0) {
-      unitX.set(uid, leftBound + myWidth / 2);
-      return leftBound + myWidth;
-    }
-    let cursor = leftBound + Math.max(0, (myWidth - (kids.reduce((s, k) => s + subtreeWidth(k), 0) + (kids.length - 1) * SIBLING_GAP)) / 2);
-    const childCenters = [];
-    for (const k of kids) {
-      const w = subtreeWidth(k);
-      placeUnit(k, cursor);
-      childCenters.push(unitX.get(k));
-      cursor += w + SIBLING_GAP;
-    }
-    unitX.set(uid, (childCenters[0] + childCenters[childCenters.length - 1]) / 2);
-    return leftBound + myWidth;
-  }
-
-  let cursor = PADDING;
-  for (const r of rootUnits) {
-    const w = subtreeWidth(r);
-    placeUnit(r, cursor);
-    cursor += w + SIBLING_GAP * 1.6;
-  }
-
-  // person positions
-  const personPos = new Map(); // id -> {x, y, w, h}
-  for (const [uid, u] of units.entries()) {
-    const cx = unitX.get(uid) ?? PADDING;
-    const gen = unitGen.get(uid) ?? 0;
-    const totalW = memberWidth(uid);
-    let x = cx - totalW / 2;
-    const y = PADDING + gen * ROW_HEIGHT;
-    for (const m of u.members) {
-      personPos.set(m, { x, y, w: CARD_W, h: CARD_H });
-      x += CARD_W + SPOUSE_GAP;
-    }
-  }
-
-  // bounds
-  let maxX = 0, maxY = 0;
-  for (const pos of personPos.values()) {
-    maxX = Math.max(maxX, pos.x + pos.w);
-    maxY = Math.max(maxY, pos.y + pos.h);
-  }
-
-  return { personPos, unitOf, units, unitChildren, unitParents, unitX, unitGen, width: maxX + PADDING, height: maxY + PADDING };
+  return state.layout;
 }
 
 // ------------------------------------------------------------------ rendering
 function render() {
-  const hasPeople = state.persons.length > 0;
+  const projected = state.projection || { persons: state.persons, relationships: state.relationships };
+  const renderedPersons = projected.persons;
+  const renderedRelationships = projected.relationships;
+  const kinshipToggle = $('#explorerKinshipToggle');
+  const relationLegend = $('#relLegend');
+  relationLegend?.classList.toggle('kinship-overview-active', state.showKinshipLines);
+  if (kinshipToggle) {
+    kinshipToggle.classList.toggle('active', state.showKinshipLines);
+    kinshipToggle.setAttribute('aria-pressed', String(state.showKinshipLines));
+    kinshipToggle.textContent = state.showKinshipLines ? 'Hide kinship' : 'Kinship links';
+    kinshipToggle.title = state.selectedId
+      ? 'Show or hide inferred kinship links connected to the selected person'
+      : 'Select a person first to show focused inferred kinship links';
+  }
+  const hasPeople = renderedPersons.length > 0;
   $('#emptyState').classList.toggle('hidden', hasPeople);
   if (!hasPeople) {
     $('#treeSvg').innerHTML = '';
@@ -420,8 +313,7 @@ function render() {
 
   const layout = computeLayout();
   const svg = $('#treeSvg');
-  svg.setAttribute('width', Math.max(layout.width, window.innerWidth));
-  svg.setAttribute('height', Math.max(layout.height, window.innerHeight - 60));
+  syncTreeViewportSize(layout);
   svg.innerHTML = '';
 
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -436,13 +328,48 @@ function render() {
   const cardLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   g.appendChild(cardLayer);
 
+  const largeTree = renderedPersons.length > 300;
+  let visibleIds = new Set(renderedPersons.map((person) => person.id));
+  if (largeTree && state.zoom >= 0.075) {
+    const rect = canvasWrap.getBoundingClientRect();
+    const overscan = 420 / state.zoom;
+    const left = -state.panX / state.zoom - overscan;
+    const top = -state.panY / state.zoom - overscan;
+    const right = (rect.width - state.panX) / state.zoom + overscan;
+    const bottom = (rect.height - state.panY) / state.zoom + overscan;
+    visibleIds = new Set(renderedPersons.filter((person) => {
+      const at = layout.personPos.get(person.id);
+      return at && at.x + at.w >= left && at.x <= right && at.y + at.h >= top && at.y <= bottom;
+    }).map((person) => person.id));
+  }
+
+  if (largeTree && state.zoom < 0.075) {
+    cardLayer.setAttribute('class', 'tree-density-layer');
+    for (const person of renderedPersons) {
+      const at = layout.personPos.get(person.id);
+      if (!at) continue;
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('cx', at.x + at.w / 2);
+      dot.setAttribute('cy', at.y + at.h / 2);
+      dot.setAttribute('r', 7);
+      dot.setAttribute('fill', person.gender === 'female' ? '#a26770' : person.gender === 'male' ? '#416d5c' : '#8d7449');
+      cardLayer.appendChild(dot);
+    }
+    renderMinimap(layout, renderedPersons);
+    return;
+  }
+
   // ---- extended connectors (siblings, grandparents, relatives, etc) ----
-  for (const r of state.relationships) {
+  for (const r of renderedRelationships) {
+    if (!visibleIds.has(r.person1_id) && !visibleIds.has(r.person2_id)) continue;
+    if (!state.showKinshipLines) continue;
     if (['relative', 'sibling', 'grandparent', 'grandchild', 'aunt_uncle', 'niece_nephew', 'cousin'].includes(r.type)) {
+      if (!state.selectedId
+        || (Number(r.person1_id) !== Number(state.selectedId) && Number(r.person2_id) !== Number(state.selectedId))) continue;
       const a = layout.personPos.get(r.person1_id);
       const b = layout.personPos.get(r.person2_id);
       if (a && b) {
-        drawArc(connLayer, a.x + a.w / 2, a.y + a.h / 2, b.x + b.w / 2, b.y + b.h / 2, r.type);
+        drawArc(connLayer, a.x + a.w / 2, a.y + a.h / 2, b.x + b.w / 2, b.y + b.h / 2, r.type, r.inferred);
       }
     }
   }
@@ -453,6 +380,7 @@ function render() {
     for (let i = 0; i < u.members.length - 1; i++) {
       const a = layout.personPos.get(u.members[i]);
       const b = layout.personPos.get(u.members[i + 1]);
+      if (!visibleIds.has(u.members[i]) && !visibleIds.has(u.members[i + 1])) continue;
       const y = a.y + a.h / 2;
       drawLine(connLayer, a.x + a.w, y, b.x, y, 'spouse');
     }
@@ -461,12 +389,15 @@ function render() {
   // ---- parent-child connectors (unit to unit, elbow style) ----
   for (const [uid, childSet] of layout.unitChildren.entries()) {
     const pUnit = layout.units.get(uid);
+    if (!pUnit) continue;
     const pMembers = pUnit.members.map((m) => layout.personPos.get(m));
     const pxCenter = layout.unitX.get(uid);
     const pyBottom = Math.max(...pMembers.map((m) => m.y + m.h));
 
     for (const cuid of childSet) {
       const cUnit = layout.units.get(cuid);
+      if (!cUnit) continue;
+      if (![...pUnit.members, ...cUnit.members].some((id) => visibleIds.has(id))) continue;
       const cMembers = cUnit.members.map((m) => layout.personPos.get(m));
       const cxCenter = layout.unitX.get(cuid);
       const cyTop = Math.min(...cMembers.map((m) => m.y));
@@ -476,11 +407,13 @@ function render() {
   }
 
   // ---- cards ----
-  for (const p of state.persons) {
+  for (const p of renderedPersons) {
+    if (!visibleIds.has(p.id)) continue;
     const pos = layout.personPos.get(p.id);
     if (!pos) continue;
     cardLayer.appendChild(makeCardNode(p, pos));
   }
+  renderMinimap(layout, renderedPersons);
 }
 
 // Colour + dash palette keyed by relationship type
@@ -496,7 +429,7 @@ const REL_STYLE = {
   relative: { stroke: '#94a3b8', width: 1.8, dash: '4,6' },
 };
 
-function drawArc(layer, x1, y1, x2, y2, kind) {
+function drawArc(layer, x1, y1, x2, y2, kind, inferred = false) {
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
 
   // Decide how far up/down the arc should bow based on horizontal distance
@@ -516,6 +449,12 @@ function drawArc(layer, x1, y1, x2, y2, kind) {
   path.setAttribute('stroke', s.stroke);
   path.setAttribute('stroke-width', s.width);
   if (s.dash) path.setAttribute('stroke-dasharray', s.dash);
+  if (inferred) {
+    path.classList.add('inferred-relationship');
+    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    title.textContent = `${kind.replace(/_/g, ' ')} · inferred from recorded family links`;
+    path.appendChild(title);
+  }
   layer.appendChild(path);
 }
 
@@ -596,13 +535,29 @@ function makeCardNode(p, pos) {
 // ------------------------------------------------------------------ selection & side panel
 function selectPerson(id) {
   state.selectedId = id;
-  render();
+  syncSelectedCard(id);
   openSidePanel(id);
+  render();
+}
+
+function syncSelectedCard(selectedId) {
+  for (const card of document.querySelectorAll('.person-card')) {
+    card.classList.toggle('selected', card.dataset.personId === String(selectedId));
+  }
+}
+
+function positionSidePanel() {
+  const canvas = $('#canvasWrap');
+  const panel = $('#sidePanel');
+  if (!canvas || !panel) return;
+  const top = Math.max(0, Math.round(canvas.getBoundingClientRect().top));
+  panel.style.setProperty('--detail-panel-top', `${top}px`);
 }
 
 function openSidePanel(id) {
   const p = personById(id);
   if (!p) return;
+  positionSidePanel();
   const {
     parentsOf, childrenOf, spousesOf,
     siblingsOf, grandparentsOf, grandchildrenOf,
@@ -629,6 +584,11 @@ function openSidePanel(id) {
   const relatives = [...relativeIds].map(personById).filter(Boolean);
 
   const avatarStyle = p.photo_url ? `background-image:url(${p.photo_url})` : '';
+  const privacyNotice = p.privacy_redacted === 'private'
+    ? 'This relative chose to keep their profile details private.'
+    : p.privacy_redacted === 'living_limited'
+      ? 'Some details are hidden because this person is living.'
+      : '';
 
   $('#sidePanelContent').innerHTML = `
     <div class="panel-avatar" style="${avatarStyle || (p.gender === 'male' ? 'background-color:var(--male)' : p.gender === 'female' ? 'background-color:var(--female)' : '')}">${p.photo_url ? '' : initials(p)}</div>
@@ -636,10 +596,16 @@ function openSidePanel(id) {
     <div class="panel-meta">${p.birth_date ? 'Born ' + escapeHtml(p.birth_date) : 'Birth date unknown'}${p.death_date ? ' · Died ' + escapeHtml(p.death_date) : ''}</div>
     ${p.birth_place ? `<div class="panel-place">📍 ${escapeHtml(p.birth_place)}</div>` : ''}
     ${p.notes ? `<div class="panel-notes">${escapeHtml(p.notes)}</div>` : ''}
+    ${privacyNotice ? `<div class="privacy-notice">${escapeHtml(privacyNotice)}</div>` : ''}
+    ${!p.privacy_redacted ? `<div class="privacy-profile-meta">${escapeHtml(p.life_status || 'unknown')} · ${escapeHtml(p.visibility || 'family')}</div>` : ''}
 
     <div class="panel-actions">
-      <button class="btn btn-ghost" id="editPersonBtn">Edit</button>
+      ${p.can_edit ? '<button class="btn btn-ghost" id="editPersonBtn">Edit</button>' : ''}
       <button class="btn btn-ghost" id="focusPersonBtn">Center in view</button>
+    </div>
+    <div class="panel-actions archive-profile-actions">
+      <button class="btn btn-ghost" id="personTimelineBtn">View life timeline</button>
+      ${p.can_edit ? '<button class="btn btn-ghost" id="personAddEventBtn">Add life event</button>' : ''}
     </div>
 
     ${relSection('Parents', parents, id, 'parent_of_target')}
@@ -648,11 +614,16 @@ function openSidePanel(id) {
     ${relSection('Siblings', siblings, id, 'sibling_of_target')}
     ${relSection('Grandparents', grandparents, id, 'grandparent_of_target')}
     ${relSection('Grandchildren', grandchildren, id, 'grandchild_of_target')}
-    ${relSection('Relatives', relatives, id, 'relative_of_target')}
+    ${relSection('Aunts / Uncles', (auntUnclesOf.get(id) || []).map(personById).filter(Boolean), id, 'relative_of_target')}
+    ${relSection('Nieces / Nephews', (nieceNephewsOf.get(id) || []).map(personById).filter(Boolean), id, 'relative_of_target')}
+    ${relSection('Cousins', (cousinsOf.get(id) || []).map(personById).filter(Boolean), id, 'relative_of_target')}
+    ${relSection('Other Relatives', relatives, id, 'relative_of_target')}
   `;
 
-  $('#editPersonBtn').addEventListener('click', () => openPersonModal(p));
+  $('#editPersonBtn')?.addEventListener('click', () => openPersonModal(p));
   $('#focusPersonBtn').addEventListener('click', () => centerOnPerson(id));
+  $('#personTimelineBtn').addEventListener('click', () => window.openTimelineForPerson?.(id));
+  $('#personAddEventBtn')?.addEventListener('click', () => window.openEventForPerson?.(id));
 
   panel.querySelectorAll('.rel-name').forEach((el) => {
     el.addEventListener('click', () => {
@@ -662,6 +633,7 @@ function openSidePanel(id) {
     });
   });
   panel.querySelectorAll('.rel-remove').forEach((el) => {
+    if (!p.can_edit) { el.remove(); return; }
     el.addEventListener('click', async () => {
       await api(`/relationships/${el.dataset.relId}`, { method: 'DELETE' });
       await loadTree();
@@ -669,6 +641,7 @@ function openSidePanel(id) {
     });
   });
   panel.querySelectorAll('.quick-add-btn').forEach((el) => {
+    if (!p.can_edit) { el.remove(); return; }
     el.addEventListener('click', () => {
       const kind = el.dataset.kind;
       // Allow adding these directly now since they draw as dashed lines
@@ -740,43 +713,236 @@ function escapeHtml(str) {
 $('#closePanelBtn').addEventListener('click', () => {
   $('#sidePanel').classList.add('hidden');
   state.selectedId = null;
+  syncSelectedCard(null);
   render();
 });
 
 // ------------------------------------------------------------------ pan / zoom
-let isDragging = false, dragStart = { x: 0, y: 0 }, panStart = { x: 0, y: 0 };
-
 const canvasWrap = $('#canvasWrap');
-canvasWrap.addEventListener('mousedown', (e) => {
-  if (e.target.closest('.person-card')) return;
-  isDragging = true;
-  canvasWrap.classList.add('dragging');
-  dragStart = { x: e.clientX, y: e.clientY };
-  panStart = { x: state.panX, y: state.panY };
-});
-window.addEventListener('mousemove', (e) => {
-  if (!isDragging) return;
-  state.panX = panStart.x + (e.clientX - dragStart.x);
-  state.panY = panStart.y + (e.clientY - dragStart.y);
-  applyTransformOnly();
-});
-window.addEventListener('mouseup', () => { isDragging = false; canvasWrap.classList.remove('dragging'); });
+const activePointers = new Map();
+let dragGesture = null;
+let pinchGesture = null;
+let transformFrame = null;
+let virtualRefreshTimer = null;
+let minimapScale = null;
 
 function applyTransformOnly() {
-  const vp = $('#viewport');
-  if (vp) vp.setAttribute('transform', `translate(${state.panX},${state.panY}) scale(${state.zoom})`);
+  if (transformFrame !== null) return;
+  transformFrame = requestAnimationFrame(() => {
+    transformFrame = null;
+    const viewport = $('#viewport');
+    if (viewport) viewport.setAttribute('transform', `translate(${state.panX},${state.panY}) scale(${state.zoom})`);
+    const zoomLabel = $('#treeZoomLabel');
+    if (zoomLabel) zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
+    updateMinimapViewport();
+    const projectedCount = state.projection?.persons?.length || state.persons.length;
+    if (projectedCount > 300) {
+      clearTimeout(virtualRefreshTimer);
+      virtualRefreshTimer = setTimeout(render, 90);
+    }
+  });
 }
 
-$('#zoomInBtn').addEventListener('click', () => { state.zoom = Math.min(state.zoom + 0.1, 2); applyTransformOnly(); });
-$('#zoomOutBtn').addEventListener('click', () => { state.zoom = Math.max(state.zoom - 0.1, 0.3); applyTransformOnly(); });
-$('#resetViewBtn').addEventListener('click', () => { state.zoom = 1; state.panX = 0; state.panY = 0; applyTransformOnly(); });
+function renderMinimap(layout, people) {
+  const minimap = $('#treeMinimap');
+  const svg = $('#treeMinimapSvg');
+  if (!minimap || !svg) return;
+  minimap.classList.toggle('hidden', people.length < 2);
+  if (people.length < 2) return;
+  const width = 180;
+  const height = 112;
+  const inset = 7;
+  const scale = Math.min((width - inset * 2) / Math.max(layout.width, 1), (height - inset * 2) / Math.max(layout.height, 1));
+  const offsetX = (width - layout.width * scale) / 2;
+  const offsetY = (height - layout.height * scale) / 2;
+  minimapScale = { scale, offsetX, offsetY, layout };
+  const points = people.map((person) => {
+    const at = layout.personPos.get(person.id);
+    if (!at) return '';
+    const x = offsetX + (at.x + at.w / 2) * scale;
+    const y = offsetY + (at.y + at.h / 2) * scale;
+    return `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${people.length > 500 ? 1 : 1.7}" />`;
+  }).join('');
+  svg.innerHTML = `<rect class="minimap-paper" width="180" height="112" rx="7"/><g class="minimap-people">${points}</g><rect id="treeMinimapViewport" class="minimap-viewport" rx="3"/>`;
+  if ($('#treeMinimapCount')) $('#treeMinimapCount').textContent = `${people.length} people`;
+  updateMinimapViewport();
+}
+
+function updateMinimapViewport() {
+  const viewport = $('#treeMinimapViewport');
+  if (!viewport || !minimapScale || !state.zoom) return;
+  const rect = canvasWrap.getBoundingClientRect();
+  const worldLeft = -state.panX / state.zoom;
+  const worldTop = -state.panY / state.zoom;
+  const worldWidth = rect.width / state.zoom;
+  const worldHeight = rect.height / state.zoom;
+  viewport.setAttribute('x', Math.max(0, minimapScale.offsetX + worldLeft * minimapScale.scale));
+  viewport.setAttribute('y', Math.max(0, minimapScale.offsetY + worldTop * minimapScale.scale));
+  viewport.setAttribute('width', Math.min(180, Math.max(5, worldWidth * minimapScale.scale)));
+  viewport.setAttribute('height', Math.min(112, Math.max(5, worldHeight * minimapScale.scale)));
+}
+
+function clampZoom(zoom) {
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+}
+
+function zoomAroundPoint(nextZoom, clientX, clientY) {
+  const rect = canvasWrap.getBoundingClientRect();
+  const localX = clientX - rect.left;
+  const localY = clientY - rect.top;
+  const worldX = (localX - state.panX) / state.zoom;
+  const worldY = (localY - state.panY) / state.zoom;
+  state.zoom = clampZoom(nextZoom);
+  state.panX = localX - worldX * state.zoom;
+  state.panY = localY - worldY * state.zoom;
+  applyTransformOnly();
+}
+
+function zoomFromViewportCenter(direction) {
+  const rect = canvasWrap.getBoundingClientRect();
+  const factor = direction > 0 ? 1.25 : 0.8;
+  zoomAroundPoint(state.zoom * factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+}
+
+function syncTreeViewportSize(layout = state.layout) {
+  const svg = $('#treeSvg');
+  const rect = canvasWrap.getBoundingClientRect();
+  svg.setAttribute('width', Math.max(layout?.width || 0, Math.ceil(rect.width)));
+  svg.setAttribute('height', Math.max(layout?.height || 0, Math.ceil(rect.height)));
+}
+
+function fitTreeToViewport() {
+  if (!state.persons.length) return;
+  const layout = computeLayout();
+  const rect = canvasWrap.getBoundingClientRect();
+  const inset = rect.width <= 640 ? 20 : 42;
+  const availableWidth = Math.max(1, rect.width - inset * 2);
+  const availableHeight = Math.max(1, rect.height - inset * 2);
+  state.zoom = clampZoom(Math.min(1, availableWidth / layout.width, availableHeight / layout.height));
+  state.panX = (rect.width - layout.width * state.zoom) / 2;
+  state.panY = (rect.height - layout.height * state.zoom) / 2;
+  applyTransformOnly();
+}
+
+function pointerDistance(first, second) {
+  return Math.hypot(second.x - first.x, second.y - first.y);
+}
+
+function pointerCenter(first, second) {
+  return { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+}
+
+function startPinchGesture() {
+  const [first, second] = [...activePointers.values()];
+  if (!first || !second) return;
+  const rect = canvasWrap.getBoundingClientRect();
+  const center = pointerCenter(first, second);
+  const localCenter = { x: center.x - rect.left, y: center.y - rect.top };
+  pinchGesture = {
+    distance: Math.max(1, pointerDistance(first, second)),
+    zoom: state.zoom,
+    worldX: (localCenter.x - state.panX) / state.zoom,
+    worldY: (localCenter.y - state.panY) / state.zoom,
+  };
+  dragGesture = null;
+}
+
+canvasWrap.addEventListener('pointerdown', (event) => {
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  if (event.target.closest('.person-card, button, input, select, a')) return;
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  canvasWrap.setPointerCapture?.(event.pointerId);
+  canvasWrap.classList.add('dragging');
+  if (activePointers.size === 1) {
+    dragGesture = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      panX: state.panX,
+      panY: state.panY,
+    };
+  } else if (activePointers.size === 2) {
+    startPinchGesture();
+  }
+});
+
+canvasWrap.addEventListener('pointermove', (event) => {
+  if (!activePointers.has(event.pointerId)) return;
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  if (activePointers.size >= 2 && pinchGesture) {
+    event.preventDefault();
+    const [first, second] = [...activePointers.values()];
+    const rect = canvasWrap.getBoundingClientRect();
+    const center = pointerCenter(first, second);
+    state.zoom = clampZoom(pinchGesture.zoom * pointerDistance(first, second) / pinchGesture.distance);
+    state.panX = center.x - rect.left - pinchGesture.worldX * state.zoom;
+    state.panY = center.y - rect.top - pinchGesture.worldY * state.zoom;
+    applyTransformOnly();
+  } else if (dragGesture?.pointerId === event.pointerId) {
+    event.preventDefault();
+    state.panX = dragGesture.panX + event.clientX - dragGesture.x;
+    state.panY = dragGesture.panY + event.clientY - dragGesture.y;
+    applyTransformOnly();
+  }
+});
+
+function finishPointerGesture(event) {
+  if (!activePointers.has(event.pointerId)) return;
+  activePointers.delete(event.pointerId);
+  if (activePointers.size === 0) {
+    dragGesture = null;
+    pinchGesture = null;
+    canvasWrap.classList.remove('dragging');
+    return;
+  }
+  const [remainingId, remaining] = activePointers.entries().next().value;
+  pinchGesture = null;
+  dragGesture = {
+    pointerId: remainingId,
+    x: remaining.x,
+    y: remaining.y,
+    panX: state.panX,
+    panY: state.panY,
+  };
+}
+
+canvasWrap.addEventListener('pointerup', finishPointerGesture);
+canvasWrap.addEventListener('pointercancel', finishPointerGesture);
+canvasWrap.addEventListener('lostpointercapture', finishPointerGesture);
+
+$('#zoomInBtn').addEventListener('click', () => zoomFromViewportCenter(1));
+$('#zoomOutBtn').addEventListener('click', () => zoomFromViewportCenter(-1));
+$('#resetViewBtn').addEventListener('click', fitTreeToViewport);
+$('#treeZoomInBtn').addEventListener('click', () => zoomFromViewportCenter(1));
+$('#treeZoomOutBtn').addEventListener('click', () => zoomFromViewportCenter(-1));
+$('#fitTreeBtn').addEventListener('click', fitTreeToViewport);
+$('#explorerKinshipToggle')?.addEventListener('click', () => {
+  if (!state.selectedId) return;
+  state.showKinshipLines = !state.showKinshipLines;
+  render();
+});
+$('#treeMinimapSvg')?.addEventListener('click', (event) => {
+  if (!minimapScale) return;
+  const box = event.currentTarget.getBoundingClientRect();
+  const mapX = (event.clientX - box.left) * 180 / box.width;
+  const mapY = (event.clientY - box.top) * 112 / box.height;
+  const worldX = (mapX - minimapScale.offsetX) / minimapScale.scale;
+  const worldY = (mapY - minimapScale.offsetY) / minimapScale.scale;
+  const canvas = canvasWrap.getBoundingClientRect();
+  state.panX = canvas.width / 2 - worldX * state.zoom;
+  state.panY = canvas.height / 2 - worldY * state.zoom;
+  applyTransformOnly();
+});
 
 canvasWrap.addEventListener('wheel', (e) => {
-  if (!e.ctrlKey && !e.metaKey) return;
   e.preventDefault();
-  const delta = e.deltaY > 0 ? -0.05 : 0.05;
-  state.zoom = Math.min(2, Math.max(0.3, state.zoom + delta));
-  applyTransformOnly();
+  if (e.ctrlKey || e.metaKey) {
+    zoomAroundPoint(state.zoom * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+  } else {
+    state.panX -= e.deltaX;
+    state.panY -= e.deltaY;
+    applyTransformOnly();
+  }
 }, { passive: false });
 
 function centerOnPerson(id) {
@@ -836,6 +1002,8 @@ function openPersonModal(person, prefill = {}) {
   $('#f_last_name').value = person?.last_name || '';
   $('#f_maiden_name').value = person?.maiden_name || '';
   $('#f_gender').value = person?.gender || 'unknown';
+  $('#f_life_status').value = person?.life_status || 'living';
+  $('#f_visibility').value = person?.visibility || 'family';
   $('#f_birth_date').value = person?.birth_date || '';
   $('#f_death_date').value = person?.death_date || '';
   $('#f_birth_place').value = person?.birth_place || '';
@@ -852,7 +1020,7 @@ function openPersonModal(person, prefill = {}) {
   }
   preview.dataset.url = person?.photo_url || '';
 
-  $('#deletePersonBtn').classList.toggle('hidden', !person);
+  $('#deletePersonBtn').classList.toggle('hidden', !person || !person.can_edit);
 
   // Search section handling
   const isAddingNew = !person;
@@ -952,13 +1120,19 @@ $('#photoDrop').addEventListener('click', () => $('#photoInput').click());
 $('#photoInput').addEventListener('change', async () => {
   const file = $('#photoInput').files[0];
   if (!file) return;
-  const fd = new FormData();
-  fd.append('photo', file);
-  const res = await fetch(`${API}/upload`, { method: 'POST', body: fd });
-  const data = await res.json();
+  let data;
+  if (window.LineageFirebaseStorage?.upload && state.tree?.id) {
+    data = await window.LineageFirebaseStorage.upload(file, state.tree.id, modalContext.editingId);
+  } else {
+    const fd = new FormData();
+    fd.append('photo', file);
+    const res = await fetch(`${API}/upload`, { method: 'POST', body: fd });
+    data = await res.json();
+  }
   if (data.url) {
     $('#photoPreview').src = data.url;
     $('#photoPreview').dataset.url = data.url;
+    $('#photoPreview').dataset.path = data.path || '';
     $('#photoPreview').classList.remove('hidden');
     $('#photoPlaceholder').classList.add('hidden');
   }
@@ -1003,11 +1177,14 @@ $('#personForm').addEventListener('submit', async (e) => {
         last_name: $('#f_last_name').value.trim(),
         maiden_name: $('#f_maiden_name').value.trim(),
         gender: $('#f_gender').value,
+        life_status: $('#f_life_status').value,
+        visibility: $('#f_visibility').value,
         birth_date: $('#f_birth_date').value || null,
         death_date: $('#f_death_date').value || null,
         birth_place: $('#f_birth_place').value.trim() || null,
         notes: $('#f_notes').value.trim() || null,
         photo_url: $('#photoPreview').dataset.url || null,
+        photo_path: $('#photoPreview').dataset.path || null,
       };
       if (!payload.first_name) return;
       const person = await api('/persons', { method: 'POST', body: JSON.stringify(payload) });
@@ -1019,11 +1196,14 @@ $('#personForm').addEventListener('submit', async (e) => {
         last_name: $('#f_last_name').value.trim(),
         maiden_name: $('#f_maiden_name').value.trim(),
         gender: $('#f_gender').value,
+        life_status: $('#f_life_status').value,
+        visibility: $('#f_visibility').value,
         birth_date: $('#f_birth_date').value || null,
         death_date: $('#f_death_date').value || null,
         birth_place: $('#f_birth_place').value.trim() || null,
         notes: $('#f_notes').value.trim() || null,
         photo_url: $('#photoPreview').dataset.url || null,
+        photo_path: $('#photoPreview').dataset.path || null,
       };
       if (!payload.first_name) return;
       await api(`/persons/${personId}`, { method: 'PUT', body: JSON.stringify(payload) });
@@ -1063,40 +1243,577 @@ $('#personForm').addEventListener('submit', async (e) => {
 
 $('#deletePersonBtn').addEventListener('click', async () => {
   if (!modalContext.editingId) return;
-  if (!confirm('Delete this person and all their recorded relationships?')) return;
-  await api(`/persons/${modalContext.editingId}`, { method: 'DELETE' });
+  if (!confirm('Move this person to the recycle bin? Their relationships will return if the profile is restored.')) return;
+  const reason = prompt('Optional reason for deletion:') || '';
+  await api(`/persons/${modalContext.editingId}`, { method: 'DELETE', body: JSON.stringify({ reason }) });
   closePersonModal();
   $('#sidePanel').classList.add('hidden');
   state.selectedId = null;
   await loadTree();
 });
 
-// re-render on window resize (keeps svg sized reasonably)
-window.addEventListener('resize', () => render());
+// Mobile browsers resize the visual viewport while their address bar moves.
+// Only resize the SVG surface; the cached genealogy and card DOM remain intact.
+let viewportResizeFrame = null;
+function queueTreeViewportResize() {
+  if (viewportResizeFrame !== null) return;
+  viewportResizeFrame = requestAnimationFrame(() => {
+    viewportResizeFrame = null;
+    syncTreeViewportSize();
+    positionSidePanel();
+  });
+}
+window.addEventListener('resize', queueTreeViewportResize, { passive: true });
+window.visualViewport?.addEventListener('resize', queueTreeViewportResize, { passive: true });
 
 // Toggle relative label input
 $('#f_relation_type').addEventListener('change', (e) => {
   $('#relativeLabelRow').classList.toggle('hidden', e.target.value !== 'relative_of');
 });
 
-// ------------------------------------------------------------------ Auth logic
+// ------------------------------------------------------------------ Family access and authentication
+const FAMILY_ROLE_LEVEL = { viewer: 1, contributor: 2, admin: 3, owner: 4 };
+const startupParams = new URLSearchParams(window.location.search);
+const inviteToken = startupParams.get('invite');
+const verificationToken = startupParams.get('verify');
+const resetToken = startupParams.get('reset');
+const shareToken = startupParams.get('share');
+let invitationInfo = null;
 let isLoginMode = true;
-$('#authToggleLink').addEventListener('click', (e) => {
-  e.preventDefault();
-  isLoginMode = !isLoginMode;
-  $('#authTitle').textContent = isLoginMode ? 'Sign In to Lineage' : 'Create an Account';
-  $('#authSubmitBtn').textContent = isLoginMode ? 'Sign In' : 'Sign Up';
-  $('#authToggleLink').textContent = isLoginMode ? "Don't have an account? Sign up." : 'Already have an account? Sign in.';
-  $('#authFamilyNameRow').classList.toggle('hidden', isLoginMode);
-  $('#authFamilyName').required = !isLoginMode;
 
-  $('#authConfirmPasswordRow').classList.toggle('hidden', isLoginMode);
-  $('#authConfirmPassword').required = !isLoginMode;
-  $('#authForgotPasswordWrap').classList.toggle('hidden', !isLoginMode);
+function activeFamily() {
+  return currentUser?.active_family || currentUser?.families?.find((family) => Number(family.id) === Number(currentUser.active_family_id)) || null;
+}
 
-  $('#authEmailLabel').textContent = isLoginMode ? 'Email or Family Name' : 'Email';
+function hasFamilyRole(minimumRole) {
+  const role = currentUser?.active_family_role || activeFamily()?.role;
+  return (FAMILY_ROLE_LEVEL[role] || 0) >= FAMILY_ROLE_LEVEL[minimumRole];
+}
 
+function applyUserContext(context) {
+  currentUser = context;
+  const families = context?.families || [];
+  const selectedId = Number(context?.active_family_id || context?.active_family?.id || 0);
+  const select = $('#familySelect');
+  select.innerHTML = families.map((family) =>
+    `<option value="${family.id}" ${Number(family.id) === selectedId ? 'selected' : ''}>${escapeHtml(family.name)}</option>`
+  ).join('');
+
+  const family = families.find((item) => Number(item.id) === selectedId) || context?.active_family || null;
+  if (family) {
+    currentUser.active_family = family;
+    currentUser.active_family_id = family.id;
+    currentUser.active_family_role = family.role;
+  }
+  const role = family?.role || 'viewer';
+  $('#familyRoleBadge').textContent = role;
+  document.body.dataset.familyRole = role;
+  $('#treeName').readOnly = !hasFamilyRole('admin');
+  $('#superadminBtn').classList.toggle('hidden', !context?.is_superadmin);
+}
+
+async function refreshUserContext() {
+  const context = await api('/auth/me');
+  applyUserContext(context);
+  return context;
+}
+
+function showAuthenticatedApp(context) {
+  applyUserContext(context);
+  resetApprovalScreenMode();
+  $('#authScreen').classList.add('hidden');
+  $('#app').classList.add('hidden');
+  $('#approvalScreen').classList.add('hidden');
+
+  if (context?.account_status === 'approved') {
+    $('#app').classList.remove('hidden');
+    return true;
+  }
+
+  $('#approvalScreen').classList.remove('hidden');
+  loadApprovalAccess().catch((error) => showApprovalMessage(error.message));
+  return false;
+}
+
+function resetApprovalScreenMode() {
+  $('#approvalScreen').classList.remove('public-help-mode');
+  $('#approvalBrandContext').textContent = 'Account approval';
+  $('#approvalLogoutBtn').textContent = 'Log out';
+}
+
+function openPublicHelp(targetId) {
+  $('#app').classList.add('hidden');
+  $('#authScreen').classList.add('hidden');
+  $('#approvalScreen').classList.add('public-help-mode');
+  $('#approvalScreen').classList.remove('hidden');
+  $('#approvalBrandContext').textContent = 'Product guide';
+  $('#approvalLogoutBtn').textContent = 'Back to sign in';
+  $('#approvalScreen').scrollTop = 0;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.getElementById(targetId)?.scrollIntoView({ block: 'start' });
+  }));
+}
+
+function closePublicHelp() {
+  resetApprovalScreenMode();
+  $('#approvalScreen').classList.add('hidden');
+  $('#approvalScreen').scrollTop = 0;
+  $('#authScreen').classList.remove('hidden');
+  window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+}
+
+function showApprovalMessage(message, type = 'error') {
+  const element = $('#approvalMessage');
+  element.textContent = message;
+  element.className = `approval-message ${type}`;
+}
+
+async function loadApprovalAccess() {
+  const data = await api('/account/access');
+  const access = data.access;
+  if (currentUser) {
+    currentUser.account_status = access.account_status;
+    currentUser.is_superadmin = access.is_superadmin;
+  }
+
+  $('#unlockFee').textContent = `KES ${Number(access.unlock_fee_kes).toLocaleString()}`;
+  $('#paymentPhone').textContent = access.payment_phone;
+  const statusLabel = {
+    pending: 'Payment required',
+    payment_submitted: 'Awaiting approval',
+    rejected: 'Action required',
+    approved: 'Approved'
+  }[access.account_status] || access.account_status;
+  $('#approvalStatusBadge').textContent = statusLabel;
+  $('#approvalStatusBadge').className = `approval-status ${access.account_status}`;
+  $('#approvalMessage').className = 'hidden approval-message';
+
+  const form = $('#paymentProofForm');
+  const review = $('#paymentReviewState');
+  const firebaseUser = window.LineageFirebaseAuth?.currentUser;
+  const isPasswordProvider = Boolean(firebaseUser?.email && firebaseUser.providerData?.some((provider) => provider.providerId === 'password'));
+  const needsVerification = isPasswordProvider && !firebaseUser.emailVerified;
+  $('#verificationGate').classList.toggle('hidden', !needsVerification);
+  form.classList.toggle('hidden', needsVerification || access.account_status === 'payment_submitted' || access.account_status === 'approved');
+  review.className = 'hidden payment-review-state';
+
+  if (needsVerification) {
+    $('#approvalLead').textContent = 'Confirm your email address before submitting payment details. This protects your family records and account recovery.';
+  } else if (access.account_status === 'payment_submitted') {
+    review.textContent = `Payment code ${access.mpesa_reference} was submitted. A superadmin will compare it with the M-Pesa payment before unlocking your account.`;
+    review.className = 'payment-review-state';
+    $('#approvalLead').textContent = 'Your payment details are waiting for manual verification. You can keep this page open or check again later.';
+  } else if (access.account_status === 'rejected') {
+    review.textContent = `The previous submission was rejected: ${access.rejection_reason || access.review_note || 'payment could not be verified'}. Check the details and submit a valid transaction code.`;
+    review.className = 'payment-review-state rejected';
+    $('#approvalLead').textContent = 'Your previous proof could not be verified. Review the reason below and submit the correct transaction code.';
+  } else {
+    $('#approvalLead').textContent = 'Complete the payment below, then submit your M-Pesa transaction code for manual verification.';
+  }
+  return access;
+}
+
+async function refreshApprovalStatus() {
+  const context = await api('/auth/me');
+  const unlocked = showAuthenticatedApp(context);
+  if (unlocked) await loadTree();
+}
+
+function setAuthMode(loginMode) {
+  isLoginMode = loginMode;
+  const joining = Boolean(inviteToken && invitationInfo);
+  $('#authTitle').textContent = loginMode ? 'Sign In to Lineage' : (joining ? `Join ${invitationInfo.family_name}` : 'Create an Account');
+  $('#authSubtitle').textContent = loginMode
+    ? 'Continue building the story your family shares.'
+    : (joining ? 'Create your account to join this shared family archive.' : 'Begin a private family archive that can grow across generations.');
+  $('#authSubmitBtn').textContent = loginMode ? 'Sign In' : (joining ? 'Create account and join' : 'Sign Up');
+  $('#authToggleLink').textContent = loginMode ? "Don't have an account? Sign up." : 'Already have an account? Sign in.';
+  $('#authFamilyNameRow').classList.toggle('hidden', loginMode || joining);
+  $('#authFamilyName').required = !loginMode && !joining;
+  $('#authConfirmPasswordRow').classList.toggle('hidden', loginMode);
+  $('#authConfirmPassword').required = !loginMode;
+  $('#authForgotPasswordWrap').classList.toggle('hidden', !loginMode);
+  $('#authEmailLabel').textContent = 'Email';
   $('#authError').classList.add('hidden');
+}
+
+async function loadInvitationNotice() {
+  if (!inviteToken) return;
+  const notice = $('#inviteNotice');
+  try {
+    invitationInfo = await api(`/invitations/${encodeURIComponent(inviteToken)}`);
+    notice.textContent = `You have been invited to ${invitationInfo.family_name} as ${invitationInfo.role}. Sign in or create an account using ${invitationInfo.invited_email}.`;
+    notice.classList.remove('hidden');
+    setAuthMode(isLoginMode);
+  } catch (error) {
+    notice.textContent = error.message;
+    notice.classList.remove('hidden');
+    notice.style.borderColor = '#a13a3a';
+  }
+}
+
+async function acceptPendingInvitation() {
+  if (!inviteToken) return false;
+  await api(`/invitations/${encodeURIComponent(inviteToken)}/accept`, { method: 'POST' });
+  window.history.replaceState({}, document.title, window.location.pathname);
+  await refreshUserContext();
+  return true;
+}
+
+$('#familySelect').addEventListener('change', async (event) => {
+  try {
+    await api(`/families/${event.target.value}/select`, { method: 'POST' });
+    await refreshUserContext();
+    state.selectedId = null;
+    $('#sidePanel').classList.add('hidden');
+    await loadTree();
+  } catch (error) {
+    alert(error.message);
+    await refreshUserContext();
+  }
+});
+
+function showFamilyMessage(message, type = 'error') {
+  const element = $('#familyModalMessage');
+  element.textContent = message;
+  element.className = `family-message ${type}`;
+}
+
+function clearFamilyMessage() {
+  $('#familyModalMessage').className = 'hidden family-message';
+}
+
+async function loadFamilyManagement() {
+  clearFamilyMessage();
+  const family = activeFamily();
+  if (!family) return;
+  $('#familyModalSubtitle').textContent = `${family.name} · ${family.role}`;
+  $('#memberPermissionHint').textContent = hasFamilyRole('admin') ? 'You can manage access.' : 'Only administrators can change access.';
+  $('#inviteSection').classList.toggle('hidden', !hasFamilyRole('admin'));
+  const adminInviteOption = $('#inviteRole').querySelector('option[value="admin"]');
+  adminInviteOption.disabled = currentUser.active_family_role !== 'owner';
+  if (adminInviteOption.disabled && $('#inviteRole').value === 'admin') $('#inviteRole').value = 'contributor';
+
+  const data = await api('/family/members');
+  const canManage = hasFamilyRole('admin');
+  $('#familyMembersList').innerHTML = data.members.map((member) => {
+    const isOwner = member.role === 'owner';
+    const canManageAdmin = currentUser.active_family_role === 'owner';
+    const editable = canManage && !isOwner && (member.role !== 'admin' || canManageAdmin);
+    const transferControl = currentUser.active_family_role === 'owner' && !isOwner
+      ? `<button class="btn btn-ghost transfer-owner-btn" data-user-id="${member.id}" data-email="${escapeHtml(member.email)}" type="button">Make owner</button>`
+      : '';
+    const roleControl = editable ? `
+      <select class="member-role-select" data-user-id="${member.id}">
+        <option value="viewer" ${member.role === 'viewer' ? 'selected' : ''}>Viewer</option>
+        <option value="contributor" ${member.role === 'contributor' ? 'selected' : ''}>Contributor</option>
+        ${canManageAdmin ? `<option value="admin" ${member.role === 'admin' ? 'selected' : ''}>Administrator</option>` : ''}
+      </select>
+      <button class="btn btn-ghost member-remove-btn" data-user-id="${member.id}" type="button">Remove</button>
+    ` : `<span class="role-badge">${member.role}</span>`;
+    return `
+      <div class="member-row">
+        <div class="member-identity">
+          <div class="member-email">${escapeHtml(member.email)}${Number(member.id) === Number(currentUser.id) ? ' (you)' : ''}</div>
+          <div class="member-meta">Joined ${new Date(member.joined_at).toLocaleDateString()}</div>
+        </div>
+        ${roleControl}
+        ${transferControl}
+      </div>
+    `;
+  }).join('');
+
+  $$('.member-role-select').forEach((select) => {
+    select.addEventListener('change', async () => {
+      try {
+        await api(`/family/members/${select.dataset.userId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ role: select.value })
+        });
+        showFamilyMessage('Member role updated.', 'success');
+        await refreshUserContext();
+        await loadFamilyManagement();
+      } catch (error) {
+        showFamilyMessage(error.message);
+        await loadFamilyManagement();
+      }
+    });
+  });
+
+  $$('.member-remove-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (!confirm('Remove this person from the family tree?')) return;
+      try {
+        await api(`/family/members/${button.dataset.userId}`, { method: 'DELETE' });
+        showFamilyMessage('Member removed.', 'success');
+        await loadFamilyManagement();
+      } catch (error) {
+        showFamilyMessage(error.message);
+      }
+    });
+  });
+
+  $$('.transfer-owner-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (!confirm(`Transfer ownership to ${button.dataset.email}? You will become an administrator.`)) return;
+      try {
+        await api('/family/owner', {
+          method: 'PATCH',
+          body: JSON.stringify({ user_id: Number(button.dataset.userId) })
+        });
+        await refreshUserContext();
+        await loadFamilyManagement();
+        showFamilyMessage('Family ownership transferred.', 'success');
+      } catch (error) {
+        showFamilyMessage(error.message);
+      }
+    });
+  });
+
+  if (hasFamilyRole('admin')) await loadPendingInvitations();
+}
+
+async function loadPendingInvitations() {
+  const data = await api('/family/invitations');
+  const container = $('#pendingInvitations');
+  if (!data.invitations.length) {
+    container.innerHTML = '<p class="muted-text">No pending invitations.</p>';
+    return;
+  }
+  container.innerHTML = data.invitations.map((invitation) => `
+    <div class="pending-invite-row">
+      <div class="pending-invite-identity">
+        <div class="pending-invite-email">${escapeHtml(invitation.email)}</div>
+        <div class="pending-invite-meta">${invitation.role} · expires ${new Date(invitation.expires_at).toLocaleDateString()}</div>
+      </div>
+      <button class="btn btn-ghost revoke-invite-btn" data-invite-id="${invitation.id}" type="button">Revoke</button>
+    </div>
+  `).join('');
+  $$('.revoke-invite-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await api(`/family/invitations/${button.dataset.inviteId}`, { method: 'DELETE' });
+      await loadPendingInvitations();
+    });
+  });
+}
+
+$('#manageFamilyBtn').addEventListener('click', async () => {
+  $('#familyModalOverlay').classList.remove('hidden');
+  try {
+    await loadFamilyManagement();
+  } catch (error) {
+    showFamilyMessage(error.message);
+  }
+});
+
+$('#familyModalClose').addEventListener('click', () => $('#familyModalOverlay').classList.add('hidden'));
+
+$('#createFamilyForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    await api('/families', { method: 'POST', body: JSON.stringify({ name: $('#newFamilyName').value.trim() }) });
+    $('#newFamilyName').value = '';
+    await refreshUserContext();
+    await loadTree();
+    await loadFamilyManagement();
+    showFamilyMessage('Family tree created.', 'success');
+  } catch (error) {
+    showFamilyMessage(error.message);
+  }
+});
+
+$('#inviteForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    const data = await api('/family/invitations', {
+      method: 'POST',
+      body: JSON.stringify({ email: $('#inviteEmail').value.trim(), role: $('#inviteRole').value })
+    });
+    const link = new URL(data.invite_path, window.location.origin).toString();
+    $('#inviteLink').value = link;
+    $('#inviteResult').classList.remove('hidden');
+    $('#inviteEmail').value = '';
+    showFamilyMessage('Invitation created. Send this link privately to your relative.', 'success');
+    await loadPendingInvitations();
+  } catch (error) {
+    showFamilyMessage(error.message);
+  }
+});
+
+$('#copyInviteBtn').addEventListener('click', async () => {
+  await navigator.clipboard.writeText($('#inviteLink').value);
+  showFamilyMessage('Invitation link copied.', 'success');
+});
+
+$('#paymentProofForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    $('#submitPaymentBtn').disabled = true;
+    await api('/account/payment-submissions', {
+      method: 'POST',
+      body: JSON.stringify({
+        mpesa_reference: $('#mpesaReference').value.trim(),
+        payer_phone: $('#payerPhone').value.trim() || undefined
+      })
+    });
+    $('#mpesaReference').value = '';
+    showApprovalMessage('Payment details submitted. Your account will unlock after manual verification.', 'success');
+    await loadApprovalAccess();
+  } catch (error) {
+    showApprovalMessage(error.message);
+  } finally {
+    $('#submitPaymentBtn').disabled = false;
+  }
+});
+
+$('#refreshApprovalBtn').addEventListener('click', async () => {
+  try {
+    if (window.LineageFirebaseAuthApi?.refresh) await window.LineageFirebaseAuthApi.refresh();
+    await refreshApprovalStatus();
+  } catch (error) {
+    showApprovalMessage(error.message);
+  }
+});
+
+$('#resendVerificationBtn').addEventListener('click', async () => {
+  try {
+    if (window.LineageFirebaseAuthApi?.verifyEmail) {
+      await window.LineageFirebaseAuthApi.verifyEmail();
+      showApprovalMessage('Verification email sent. Check your inbox and spam folder.', 'success');
+    } else {
+      const response = await api('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email: currentUser?.email }) });
+      showApprovalMessage(response.message, 'success');
+    }
+  } catch (error) {
+    showApprovalMessage(error.message);
+  }
+});
+
+$('#approvalLogoutBtn').addEventListener('click', async () => {
+  if ($('#approvalScreen').classList.contains('public-help-mode')) {
+    closePublicHelp();
+    return;
+  }
+  if (window.LineageFirebaseAuthApi) await window.LineageFirebaseAuthApi.signOut().catch(() => {});
+  else await api('/auth/logout', { method: 'POST' }).catch(() => {});
+  window.location.reload();
+});
+
+$$('.auth-public-help-btn').forEach((button) => {
+  button.addEventListener('click', () => openPublicHelp(button.dataset.publicHelpTarget));
+});
+
+let approvalFaqCategory = 'all';
+
+function filterApprovalFaq() {
+  const query = $('#approvalFaqSearch').value.trim().toLocaleLowerCase();
+  const items = $$('.approval-faq-item');
+  let visibleCount = 0;
+
+  items.forEach((item) => {
+    const categoryMatches = approvalFaqCategory === 'all' || item.dataset.category === approvalFaqCategory;
+    const searchMatches = !query || item.textContent.toLocaleLowerCase().includes(query);
+    const visible = categoryMatches && searchMatches;
+    item.hidden = !visible;
+    if (!visible) item.open = false;
+    if (visible) visibleCount += 1;
+  });
+
+  $('#approvalFaqEmpty').classList.toggle('hidden', visibleCount > 0);
+  $('#approvalFaqResult').textContent = visibleCount === items.length && !query
+    ? 'Showing all questions'
+    : visibleCount + ' ' + (visibleCount === 1 ? 'question' : 'questions') + ' found';
+}
+
+function setApprovalFaqCategory(category) {
+  approvalFaqCategory = category;
+  $$('.approval-faq-filters [data-faq-category]').forEach((button) => {
+    const selected = button.dataset.faqCategory === category;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
+  filterApprovalFaq();
+}
+
+$('#approvalFaqSearch').addEventListener('input', filterApprovalFaq);
+$$('.approval-faq-filters [data-faq-category]').forEach((button) => {
+  button.addEventListener('click', () => setApprovalFaqCategory(button.dataset.faqCategory));
+});
+$$('[data-faq-category-link]').forEach((link) => {
+  link.addEventListener('click', () => {
+    $('#approvalFaqSearch').value = '';
+    setApprovalFaqCategory(link.dataset.faqCategoryLink);
+  });
+});
+
+async function loadSuperadminAccounts() {
+  const filter = $('#superadminStatusFilter').value;
+  const data = await api(`/superadmin/accounts?status=${encodeURIComponent(filter)}`);
+  const container = $('#approvalAccountsList');
+  if (!data.accounts.length) {
+    container.innerHTML = '<p class="muted-text" style="text-align:center;padding:24px">No accounts match this filter.</p>';
+    return;
+  }
+  container.innerHTML = data.accounts.map((account) => {
+    const submitted = account.account_status === 'payment_submitted' && account.payment_status === 'submitted';
+    const paymentDetails = account.mpesa_reference
+      ? `<strong>${escapeHtml(account.mpesa_reference)}</strong><div class="approval-payment-meta">KES ${account.amount_kes} · payer ${escapeHtml(account.payer_phone || 'not supplied')} · ${new Date(account.payment_submitted_at).toLocaleString()}</div>`
+      : '<span class="muted-text">No payment proof submitted</span>';
+    return `
+      <div class="approval-account-row">
+        <div>
+          <div class="approval-account-email">${escapeHtml(account.email)}</div>
+          <div class="approval-account-meta">${escapeHtml(account.family_name || 'Unnamed family')} · joined ${new Date(account.created_at).toLocaleDateString()} · ${account.account_status}</div>
+          ${account.rejection_reason ? `<div class="approval-account-meta">Reason: ${escapeHtml(account.rejection_reason)}</div>` : ''}
+        </div>
+        <div>${paymentDetails}</div>
+        <div class="approval-account-actions">
+          ${submitted ? `<button class="btn approve-account-btn" data-user-id="${account.id}" type="button">Approve</button><button class="btn btn-ghost reject-account-btn" data-user-id="${account.id}" type="button">Reject</button>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+
+  $$('.approve-account-btn').forEach((button) => button.addEventListener('click', async () => {
+    if (!confirm('Confirm that the KES 500 M-Pesa payment and transaction code match?')) return;
+    try {
+      await api(`/superadmin/accounts/${button.dataset.userId}/approve`, { method: 'PATCH' });
+      await loadSuperadminAccounts();
+    } catch (error) {
+      $('#superadminMessage').textContent = error.message;
+      $('#superadminMessage').className = 'family-message error';
+    }
+  }));
+
+  $$('.reject-account-btn').forEach((button) => button.addEventListener('click', async () => {
+    const reason = prompt('Why could this payment not be verified? The user will see this reason.');
+    if (!reason) return;
+    try {
+      await api(`/superadmin/accounts/${button.dataset.userId}/reject`, {
+        method: 'PATCH', body: JSON.stringify({ reason })
+      });
+      await loadSuperadminAccounts();
+    } catch (error) {
+      $('#superadminMessage').textContent = error.message;
+      $('#superadminMessage').className = 'family-message error';
+    }
+  }));
+}
+
+$('#superadminBtn').addEventListener('click', async () => {
+  $('#superadminModalOverlay').classList.remove('hidden');
+  $('#superadminMessage').className = 'hidden family-message';
+  try { await loadSuperadminAccounts(); }
+  catch (error) {
+    $('#superadminMessage').textContent = error.message;
+    $('#superadminMessage').className = 'family-message error';
+  }
+});
+$('#superadminModalClose').addEventListener('click', () => $('#superadminModalOverlay').classList.add('hidden'));
+$('#refreshApprovalsBtn').addEventListener('click', loadSuperadminAccounts);
+$('#superadminStatusFilter').addEventListener('change', loadSuperadminAccounts);
+$('#authToggleLink').addEventListener('click', (event) => {
+  event.preventDefault();
+  setAuthMode(!isLoginMode);
 });
 
 function togglePassword(inputId, btnId) {
@@ -1108,7 +1825,7 @@ function togglePassword(inputId, btnId) {
       btn.innerHTML = '<span style="font-size:12px;opacity:0.7">HIDE</span>';
     } else {
       input.type = 'password';
-      btn.innerHTML = '👁';
+      btn.textContent = 'Show';
     }
   });
 }
@@ -1116,45 +1833,87 @@ togglePassword('authPassword', 'togglePasswordBtn');
 togglePassword('authConfirmPassword', 'toggleConfirmPasswordBtn');
 togglePassword('resetPassword', 'toggleResetPasswordBtn');
 
-$('#authForgotPasswordLink').addEventListener('click', (e) => {
-  e.preventDefault();
+$('#authForgotPasswordLink').addEventListener('click', (event) => {
+  event.preventDefault();
   $('#resetModalOverlay').classList.remove('hidden');
   $('#resetMessage').classList.add('hidden');
   $('#resetIdentifier').value = $('#authEmail').value;
   $('#resetPassword').value = '';
+  $('#resetEmailRow').classList.remove('hidden');
+  $('#resetPasswordRow').classList.add('hidden');
+  $('#resetIdentifier').required = true;
+  $('#resetPassword').required = false;
+  $('#resetSubmitBtn').textContent = 'Send reset link';
 });
 
-$('#resetModalClose').addEventListener('click', () => {
-  $('#resetModalOverlay').classList.add('hidden');
-});
+$('#resetModalClose').addEventListener('click', () => $('#resetModalOverlay').classList.add('hidden'));
 
-$('#resetForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const identifier = $('#resetIdentifier').value.trim();
-  const new_password = $('#resetPassword').value;
-
+$('#resetForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
   try {
     $('#resetSubmitBtn').disabled = true;
-    await api('/auth/reset-password', { method: 'POST', body: JSON.stringify({ identifier, new_password }) });
+    if (window.LineageFirebaseAuthApi && !resetToken) {
+      await window.LineageFirebaseAuthApi.resetPassword($('#resetIdentifier').value.trim());
+    } else if (resetToken) {
+      await api('/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token: resetToken, new_password: $('#resetPassword').value })
+      });
+    } else {
+      await api('/auth/request-password-reset', {
+        method: 'POST',
+        body: JSON.stringify({ email: $('#resetIdentifier').value.trim() })
+      });
+    }
     $('#resetMessage').classList.remove('hidden');
     $('#resetMessage').style.backgroundColor = '#e1f5e8';
     $('#resetMessage').style.color = '#2d6a4f';
-    $('#resetMessage').textContent = 'Password reset successfully! You can now sign in.';
-    setTimeout(() => {
-      $('#resetModalOverlay').classList.add('hidden');
-    }, 2500);
-  } catch (err) {
+    $('#resetMessage').textContent = resetToken
+      ? 'Password reset successfully. You can now sign in.'
+      : 'If an account exists for that email, a secure reset link has been sent.';
+  } catch (error) {
     $('#resetMessage').classList.remove('hidden');
     $('#resetMessage').style.backgroundColor = '#faeaea';
     $('#resetMessage').style.color = '#a13a3a';
-    $('#resetMessage').textContent = err.message || 'Could not reset password.';
+    $('#resetMessage').textContent = error.message;
   } finally {
     $('#resetSubmitBtn').disabled = false;
   }
 });
 
-$('#authForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
+let phoneConfirmation = null;
+let phoneVerifier = null;
+async function finishFirebaseProviderLogin(credential) {
+  const user = credential?.user || window.LineageFirebaseAuth?.currentUser;
+  if (!user) throw new Error('Authentication did not complete.');
+  await api('/auth/profile', { method: 'POST', body: JSON.stringify({ family_name: $('#authFamilyName').value.trim(), phone_number: user.phoneNumber || undefined }) });
+  const session = await api('/auth/session');
+  const unlocked = showAuthenticatedApp(session.context || session);
+  if (unlocked) await loadTree();
+}
+$('#googleAuthBtn')?.addEventListener('click', async () => {
+  try { await finishFirebaseProviderLogin(await window.LineageFirebaseAuthApi.signInGoogle()); }
+  catch (error) { $('#authError').textContent = error.message; $('#authError').classList.remove('hidden'); }
+});
+$('#phoneAuthBtn')?.addEventListener('click', async () => {
+  try {
+    if (!window.LineageFirebaseAuthApi?.createRecaptcha) throw new Error('Phone sign-in is not available.');
+    if (!phoneVerifier) phoneVerifier = window.LineageFirebaseAuthApi.createRecaptcha('phoneRecaptcha');
+    let phone = $('#phoneAuthNumber').value.trim().replace(/[\s()-]/g, '');
+    if (/^07\d{8}$/.test(phone)) phone = `+254${phone.slice(1)}`;
+    if (/^7\d{8}$/.test(phone)) phone = `+254${phone}`;
+    if (!/^\+[1-9]\d{7,14}$/.test(phone)) throw new Error('Enter a valid phone number, for example +254712345678.');
+    phoneConfirmation = await window.LineageFirebaseAuthApi.signInPhone(phone, phoneVerifier);
+    $('#phoneCodeRow').classList.remove('hidden'); $('#phoneVerifyBtn').classList.remove('hidden'); $('#phoneAuthBtn').classList.add('hidden');
+  } catch (error) { $('#authError').textContent = error.message; $('#authError').classList.remove('hidden'); }
+});
+$('#phoneVerifyBtn')?.addEventListener('click', async () => {
+  try { await finishFirebaseProviderLogin(await phoneConfirmation.confirm($('#phoneAuthCode').value.trim())); }
+  catch (error) { $('#authError').textContent = error.message; $('#authError').classList.remove('hidden'); }
+});
+
+$('#authForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
   const email = $('#authEmail').value.trim();
   const password = $('#authPassword').value;
   const confirmPassword = $('#authConfirmPassword').value;
@@ -1167,37 +1926,186 @@ $('#authForm').addEventListener('submit', async (e) => {
   }
 
   try {
+    if (window.LineageFirebaseAuthApi) {
+      if (isLoginMode) {
+        await window.LineageFirebaseAuthApi.signIn(email, password);
+      } else {
+        const credential = await window.LineageFirebaseAuthApi.signUp(email, password);
+        if (family_name || credential?.user) await api('/auth/profile', { method: 'POST', body: JSON.stringify({ family_name }) });
+        await window.LineageFirebaseAuthApi.verifyEmail().catch(() => {});
+      }
+      const session = await api('/auth/session');
+      const context = session.context || session;
+      const unlocked = showAuthenticatedApp(context);
+      if (unlocked) await loadTree();
+      return;
+    }
     const url = isLoginMode ? '/auth/login' : '/auth/signup';
-    const body = isLoginMode ? { email, password } : { email, password, family_name };
-    const user = await api(url, { method: 'POST', body: JSON.stringify(body) });
-    currentUser = user;
-    $('#authScreen').classList.add('hidden');
-    $('#app').classList.remove('hidden');
-    loadTree();
-  } catch (err) {
-    $('#authError').textContent = err.message;
+    const body = isLoginMode
+      ? { email, password }
+      : { email, password, family_name, invite_token: inviteToken || undefined };
+    let context = await api(url, { method: 'POST', body: JSON.stringify(body) });
+    if (isLoginMode && inviteToken) {
+      try {
+        await acceptPendingInvitation();
+        context = await api('/auth/me');
+      } catch (invitationError) {
+        const unlocked = showAuthenticatedApp(context);
+        if (unlocked) await loadTree();
+        alert(`You signed in, but the invitation was not accepted: ${invitationError.message}`);
+        return;
+      }
+    } else if (!isLoginMode && inviteToken) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    const unlocked = showAuthenticatedApp(context);
+    if (unlocked) await loadTree();
+  } catch (error) {
+    $('#authError').textContent = error.message;
     $('#authError').classList.remove('hidden');
   }
 });
 
 $('#logoutBtn').addEventListener('click', async () => {
-  await api('/auth/logout', { method: 'POST' }).catch(() => { });
+  if (window.LineageFirebaseAuthApi) { await window.LineageFirebaseAuthApi.signOut().catch(() => {}); window.location.reload(); return; }
+  if (window.LineageFirebaseAuthApi) await window.LineageFirebaseAuthApi.signOut().catch(() => {});
+  else await api('/auth/logout', { method: 'POST' }).catch(() => {});
   window.location.reload();
 });
 
-// ------------------------------------------------------------------ init
-api('/auth/me').then(user => {
-  currentUser = user;
-  $('#authScreen').classList.add('hidden');
-  $('#app').classList.remove('hidden');
-  loadTree().catch(err => {
-    console.error(err);
-    alert('Could not load the family tree.');
-  });
-}).catch(() => {
-  // 401 will have shown the auth screen automatically via the api function
+$('#bootRetryBtn').addEventListener('click', () => window.location.reload());
+
+function showPrivacyMessage(message, type = 'error') {
+  const element = $('#privacyMessage');
+  element.textContent = message;
+  element.className = `family-message ${type}`;
+}
+
+async function loadRecycleBin() {
+  const section = $('#recycleSection');
+  section.classList.toggle('hidden', !hasFamilyRole('admin'));
+  if (!hasFamilyRole('admin')) return;
+  const data = await api('/recycle-bin/persons');
+  const container = $('#recycleList');
+  if (!data.persons.length) {
+    container.innerHTML = '<p class="muted-text">The recycle bin is empty.</p>';
+    return;
+  }
+  container.innerHTML = data.persons.map((person) => `
+    <div class="recycle-row">
+      <div><strong>${escapeHtml(fullName(person))}</strong>
+        <div class="muted-text">Deleted ${new Date(person.deleted_at).toLocaleString()}${person.deletion_reason ? ' · ' + escapeHtml(person.deletion_reason) : ''}<br>Recovery date: ${new Date(person.expires_at).toLocaleDateString()}</div>
+      </div>
+      <div class="recycle-actions">
+        <button class="btn btn-ghost restore-person-btn" data-id="${person.id}" type="button">Restore</button>
+        ${hasFamilyRole('owner') ? `<button class="btn btn-text purge-person-btn" data-id="${person.id}" type="button">Delete forever</button>` : ''}
+      </div>
+    </div>
+  `).join('');
+  $$('.restore-person-btn').forEach((button) => button.addEventListener('click', async () => {
+    await api(`/recycle-bin/persons/${button.dataset.id}/restore`, { method: 'POST' });
+    await Promise.all([loadRecycleBin(), loadTree()]);
+    showPrivacyMessage('Person restored.', 'success');
+  }));
+  $$('.purge-person-btn').forEach((button) => button.addEventListener('click', async () => {
+    if (!confirm('Permanently delete this profile? This cannot be undone.')) return;
+    await api(`/recycle-bin/persons/${button.dataset.id}`, { method: 'DELETE' });
+    await loadRecycleBin();
+    showPrivacyMessage('Profile permanently deleted.', 'success');
+  }));
+}
+
+$('#privacyBtn').addEventListener('click', async () => {
+  $('#privacyModalOverlay').classList.remove('hidden');
+  $('#privacyMessage').className = 'hidden family-message';
+  try { await loadRecycleBin(); } catch (error) { showPrivacyMessage(error.message); }
+});
+$('#privacyModalClose').addEventListener('click', () => $('#privacyModalOverlay').classList.add('hidden'));
+$('#refreshRecycleBtn').addEventListener('click', () => loadRecycleBin().catch((error) => showPrivacyMessage(error.message)));
+$('#accountExportBtn').addEventListener('click', () => { window.location.href = `${API}/account/data-export`; });
+$('#deleteAccountForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!confirm('Permanently delete your Lineage account?')) return;
+  try {
+    await api('/account', {
+      method: 'DELETE',
+      body: JSON.stringify({
+        password: $('#deleteAccountPassword').value,
+        confirmation: $('#deleteAccountConfirmation').value
+      })
+    });
+    window.location.reload();
+  } catch (error) {
+    showPrivacyMessage(error.message);
+  }
 });
 
+async function initializeApp() {
+  if (window.LineageFirebaseReady) await window.LineageFirebaseReady;
+  if (shareToken && window.LineageExplorer) {
+    await window.LineageExplorer.loadSharedTree(shareToken);
+    return;
+  }
+  await loadInvitationNotice();
+  if (resetToken) {
+    $('#app').classList.add('hidden');
+    $('#approvalScreen').classList.add('hidden');
+    $('#authScreen').classList.remove('hidden');
+    $('#resetModalOverlay').classList.remove('hidden');
+    $('#resetEmailRow').classList.add('hidden');
+    $('#resetPasswordRow').classList.remove('hidden');
+    $('#resetIdentifier').required = false;
+    $('#resetPassword').required = true;
+    $('#resetSubmitBtn').textContent = 'Set new password';
+    return;
+  }
+  if (verificationToken) {
+    try {
+      await api('/auth/verify-email', {
+        method: 'POST',
+        body: JSON.stringify({ token: verificationToken })
+      });
+      startupParams.delete('verify');
+      const query = startupParams.toString();
+      window.history.replaceState({}, document.title, window.location.pathname + (query ? `?${query}` : ''));
+    } catch (error) {
+      $('#authError').textContent = error.message;
+      $('#authError').classList.remove('hidden');
+    }
+  }
+  try {
+    const session = await api('/auth/session');
+    if (!session.authenticated) {
+      currentUser = null;
+      $('#app').classList.add('hidden');
+      $('#approvalScreen').classList.add('hidden');
+      $('#authScreen').classList.remove('hidden');
+      return;
+    }
+    let context = session.context;
+    let unlocked = showAuthenticatedApp(context);
+    if (inviteToken) {
+      try {
+        await acceptPendingInvitation();
+        context = await api('/auth/me');
+        unlocked = showAuthenticatedApp(context);
+      } catch (invitationError) {
+        console.warn(`Invitation was not accepted: ${invitationError.message}`);
+      }
+    }
+    if (unlocked) await loadTree();
+  } catch (error) {
+    if (error.message !== 'Unauthorized') {
+      console.warn('Application startup failed:', error);
+      window.LineageBoot.showStartupFailure(document);
+    }
+  }
+}
+
+initializeApp().catch((error) => {
+  console.warn('Application startup failed:', error);
+  window.LineageBoot.showStartupFailure(document);
+});
 /* ========================================================================= */
 // Duplicates Modal Logic
 /* ========================================================================= */

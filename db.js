@@ -3,7 +3,7 @@ const { Pool } = require('pg');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false }
 });
 
 async function initDB() {
@@ -66,6 +66,7 @@ async function initDB() {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Error during database initialization:', err);
+    throw err;
   } finally {
     client.release();
   }
@@ -88,10 +89,14 @@ async function initDB() {
   }
 }
 
-// Ensure the db is initialized, but do it asynchronously
-initDB().catch(err => console.error('Failed to init DB:', err));
+// Expose initialization so dependent migrations can run in a deterministic order.
+const ready = initDB().catch(err => {
+  console.error('Failed to init DB:', err);
+  throw err;
+});
 
 module.exports = {
   query: (text, params) => pool.query(text, params),
   pool,
+  ready,
 };

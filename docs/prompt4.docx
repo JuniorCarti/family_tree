@@ -1,0 +1,1031 @@
+# LINEAGE — CONTINUE FIREBASE CUTOVER DESPITE WEB APP QUOTA BLOCK
+
+Continue from the current `migration/firebase-native` branch.
+
+Do NOT restart the migration.
+
+Current blocker:
+
+```text
+Firebase Web App registration
+→ Firebase Management API HTTP 429 quota exhaustion
+```
+
+This blocks obtaining the final production Firebase Web configuration.
+
+It does NOT block the rest of the Firebase implementation.
+
+The objective of this pass is:
+
+# COMPLETE EVERY TASK THAT DOES NOT REQUIRE THE PRODUCTION WEB APP REGISTRATION.
+
+Do not return another report where local security tests, uploads, or feature parity remain unfinished merely because Web App registration is temporarily quota-blocked.
+
+---
+
+## 1. IMPORTANT LOCATION DECISION BEFORE FIRESTORE CREATION
+
+Production Firestore has NOT been created yet.
+
+Before creating it, explicitly evaluate:
+
+```text
+us-central1 — Iowa
+```
+
+versus:
+
+```text
+africa-south1 — Johannesburg
+```
+
+Cloud Firestore supports `africa-south1`.
+
+Firebase Cloud Functions 2nd Gen also supports `africa-south1`.
+
+If the application's primary expected users are in Kenya/East Africa and there is no existing infrastructure constraint requiring Iowa, strongly evaluate colocating:
+
+```text
+Firestore: africa-south1
+Functions: africa-south1
+```
+
+for lower regional latency.
+
+If retaining:
+
+```text
+Firestore: us-central1
+Functions: us-central1
+```
+
+document the concrete reason.
+
+DO NOT create Firestore until this decision is made.
+
+Remember:
+
+Firestore location cannot simply be changed after provisioning.
+
+Record the decision in:
+
+```text
+docs/FIREBASE_NATIVE_ARCHITECTURE.md
+```
+
+---
+
+# 2. FIRESTORE CREATION DOES NOT DEPEND ON WEB APP REGISTRATION
+
+Determine whether the authenticated Firebase/Google account has permission to create Firestore.
+
+Check existing databases first.
+
+Use appropriate tooling such as:
+
+```bash
+firebase firestore:databases:list
+```
+
+or:
+
+```bash
+gcloud firestore databases list \
+  --project=family-tree-a4c4f
+```
+
+Use whichever installed tooling actually supports the action.
+
+If no `(default)` Firestore database exists, create it only after the region decision has been explicitly confirmed.
+
+Use:
+
+```text
+Standard edition
+Firestore Native mode
+database ID: (default)
+```
+
+Do not create a MongoDB-compatible Firestore database.
+
+Do not use Test Mode rules.
+
+Immediately deploy the already-developed secure rules after database creation.
+
+---
+
+# 3. DO NOT WAIT FOR FIREBASE WEB APP QUOTA
+
+Continue local Firebase development using the Emulator Suite.
+
+The Emulator Suite is already operational:
+
+```text
+Auth
+Firestore
+Functions
+Storage
+Hosting
+```
+
+Use emulator-specific client configuration where necessary.
+
+Do not connect local tests accidentally to production.
+
+---
+
+# 4. COMPLETE TWO-USER FIRESTORE SECURITY TESTS NOW
+
+The previous status showed:
+
+```text
+FIRESTORE RULE TESTS:
+PARTIAL
+
+CROSS-USER SECURITY:
+PARTIAL
+```
+
+Finish them now.
+
+Create:
+
+```text
+User A
+User B
+```
+
+in the Authentication Emulator.
+
+Prove:
+
+```text
+A can create A's tree
+A can read A's tree
+A can edit A's tree
+
+B cannot read A's tree
+B cannot modify A's tree
+B cannot delete A's tree
+
+A cannot read B's tree
+A cannot modify B's persons
+A cannot modify B's relationships
+```
+
+If sharing exists, test:
+
+```text
+owner
+editor
+viewer
+non-member
+```
+
+Do not consider conceptual rule inspection sufficient.
+
+Automated emulator proof is required.
+
+---
+
+# 5. COMPLETE STORAGE SECURITY TESTS NOW
+
+The previous result showed:
+
+```text
+STORAGE RULE TESTS:
+PARTIAL
+```
+
+Finish real emulator tests.
+
+Prove:
+
+```text
+anonymous upload → DENIED
+
+User A upload to A's tree → ALLOWED
+
+User A upload to B's tree → DENIED
+
+User A read A's authorized photo → ALLOWED
+
+User B read A's private photo → DENIED
+
+oversized file → DENIED where enforceable
+
+unsupported MIME type → DENIED where enforceable
+```
+
+Produce deterministic automated tests.
+
+---
+
+# 6. COMPLETE PHOTO UPLOAD END-TO-END
+
+The current state says:
+
+```text
+PHOTO UPLOAD:
+NOT IMPLEMENTED end-to-end
+```
+
+Fix this now.
+
+Implement:
+
+```text
+Frontend
+→ Firebase Storage
+→ secure path
+→ Firestore person.photoPath
+→ UI display
+```
+
+Use ownership-aware paths such as:
+
+```text
+users/{uid}/trees/{treeId}/persons/{personId}/...
+```
+
+or the established architecture.
+
+Do not:
+
+```text
+store binaries in Firestore
+use public/uploads
+use Render storage
+use Cloud Run filesystem
+```
+
+Implement:
+
+```text
+upload
+replace
+display
+delete
+cleanup
+```
+
+Test all of them in the emulators.
+
+---
+
+# 7. COMPLETE FRONTEND AUTH USING EMULATORS
+
+Do not wait for production Web configuration to finish the frontend Auth implementation.
+
+Use emulator/local Firebase configuration for development.
+
+Complete:
+
+```text
+register
+login
+logout
+authentication persistence
+onAuthStateChanged
+ID token API requests
+password reset UI
+email verification UI
+```
+
+Production configuration can be inserted after Web App registration succeeds.
+
+Separate config from auth logic cleanly.
+
+For example:
+
+```text
+firebase-config.js
+firebase-client.js
+auth.js
+```
+
+or use the repository's existing structure.
+
+Do not hardcode emulator addresses into production builds.
+
+---
+
+# 8. COMPLETE FRONTEND FUNCTIONS INTEGRATION
+
+Make the actual browser application use the Firebase Functions API.
+
+Functions implementation by itself is insufficient.
+
+Wire:
+
+```text
+tree load
+person create
+person update
+person delete
+relationship create
+relationship delete
+tree rename
+```
+
+to the Firebase backend.
+
+Use Firebase ID tokens for protected requests.
+
+Test everything against the Functions Emulator.
+
+---
+
+# 9. FINISH SHARING
+
+Current:
+
+```text
+SHARING:
+NOT COMPLETE
+```
+
+Inspect the latest intended Lineage feature implementation.
+
+If sharing is a real intended feature, complete it.
+
+Implement appropriate:
+
+```text
+members
+invitations
+roles
+```
+
+Only roles actually required by the product.
+
+Security must exist at both:
+
+```text
+Functions layer
+Firestore Rules layer
+```
+
+Test:
+
+```text
+owner
+editor
+viewer
+non-member
+```
+
+If sharing is not part of the intended product anymore, mark:
+
+```text
+NOT APPLICABLE
+```
+
+with repository evidence.
+
+Do not leave it indefinitely ambiguous.
+
+---
+
+# 10. FINISH APPROVAL
+
+Current:
+
+```text
+APPROVAL:
+NOT COMPLETE
+```
+
+Determine whether the latest intended application genuinely requires approval.
+
+If yes, implement it.
+
+Authentication must remain separate from account approval.
+
+Example lifecycle if supported:
+
+```text
+pending
+approved
+rejected
+suspended
+```
+
+An authenticated account must not bypass required approval.
+
+Test it.
+
+If no longer required, mark it N/A with evidence.
+
+---
+
+# 11. FINISH PAYMENTS
+
+Current:
+
+```text
+PAYMENTS:
+NOT COMPLETE
+```
+
+Inspect the current intended product.
+
+If payments/M-Pesa are required:
+
+move trusted processing to Functions.
+
+All secrets must remain server-side.
+
+Do not expose:
+
+```text
+consumer secret
+passkey
+OAuth secret
+callback validation secret
+```
+
+to frontend JavaScript.
+
+If payments are not required for the intended current application, mark N/A.
+
+---
+
+# 12. FINISH MEMORIES
+
+Current:
+
+```text
+MEMORIES:
+NOT COMPLETE
+```
+
+Inspect the intended feature.
+
+If current:
+
+implement Firestore model, Functions/Rules authorization, frontend CRUD, and tests.
+
+If obsolete:
+
+mark N/A with evidence.
+
+---
+
+# 13. FINISH EVIDENCE
+
+Current:
+
+```text
+EVIDENCE:
+NOT COMPLETE
+```
+
+If evidence/document attachments are part of the product:
+
+implement:
+
+```text
+Firestore metadata
+Storage files where appropriate
+authorization
+frontend CRUD
+```
+
+Test cross-user isolation.
+
+Otherwise classify N/A.
+
+---
+
+# 14. FINISH IMPORT
+
+Current:
+
+```text
+IMPORT:
+NOT COMPLETE
+```
+
+If the feature is intended:
+
+support secure import.
+
+Validate:
+
+```text
+file type
+schema
+person IDs
+relationship references
+duplicates
+ownership
+```
+
+Never allow imported owner IDs to override authenticated ownership.
+
+---
+
+# 15. FINISH EXPORT
+
+Current:
+
+```text
+EXPORT:
+NOT COMPLETE
+```
+
+Export only an authorized tree.
+
+Test:
+
+```text
+person count
+relationship count
+names
+dates
+relationship references
+```
+
+Where practical, perform:
+
+```text
+export
+→ import into clean emulator tree
+→ compare
+```
+
+---
+
+# 16. COMPLETE THE FEATURE PARITY MATRIX
+
+Update:
+
+```text
+docs/FIREBASE_FEATURE_PARITY_MATRIX.md
+```
+
+Every feature must finish in one of:
+
+```text
+PASS
+FAIL
+NOT APPLICABLE
+BLOCKED — HUMAN ACTION REQUIRED
+```
+
+Do not leave:
+
+```text
+PENDING
+NOT COMPLETE
+IMPLEMENTED BUT UNTESTED
+```
+
+for tasks that can be completed locally.
+
+---
+
+# 17. CREATE FULL EMULATOR E2E SCENARIO
+
+Create an end-to-end test scenario:
+
+```text
+register User A
+login
+
+create tree
+
+create grandparent 1
+create grandparent 2
+
+create parent
+
+connect parent-child relationships
+
+create spouse
+
+create child
+
+upload photo
+
+reload app
+
+verify tree graph
+
+edit person
+
+export if supported
+
+share if supported
+
+logout
+
+login again
+
+verify persistence
+```
+
+Then create User B.
+
+Prove User B cannot access User A's private resources.
+
+---
+
+# 18. ELIMINATE LEGACY DEPENDENCY FROM NEW RUNTIME
+
+Run:
+
+```bash
+git grep -ni "DATABASE_URL"
+git grep -ni "postgres"
+git grep -ni "pool.query"
+git grep -ni "connect-pg"
+git grep -ni "SESSION_SECRET"
+git grep -ni "req.session"
+git grep -ni "render.com"
+git grep -ni "lineage-api"
+git grep -ni "run.app"
+```
+
+Classify results.
+
+Allowed only in:
+
+```text
+legacy code
+migration documentation
+historical reports
+one-time recovery tooling
+```
+
+Not allowed in the new Firebase runtime.
+
+---
+
+# 19. WEB APP REGISTRATION — RETRY INTELLIGENTLY
+
+Check whether a Firebase Web App now exists before attempting creation again.
+
+Do NOT continuously hammer the API.
+
+If none exists and quota has recovered:
+
+register one app:
+
+```text
+Display name:
+Lineage Web
+```
+
+Use the existing project:
+
+```text
+family-tree-a4c4f
+```
+
+After registration, retrieve the generated web configuration.
+
+Do not create duplicate Web Apps because previous requests timed out or returned ambiguous responses.
+
+Always list registered apps first.
+
+---
+
+# 20. IF HTTP 429 REMAINS
+
+If Management API still returns:
+
+```text
+HTTP 429
+```
+
+do not repeatedly retry.
+
+Record:
+
+```text
+WEB APP REGISTRATION:
+BLOCKED — FIREBASE API QUOTA
+```
+
+Continue all emulator/local work.
+
+The only human task should eventually be:
+
+```text
+Firebase Console
+→ Project Overview
+→ Add app
+→ Web
+→ Register app
+```
+
+when quota permits.
+
+---
+
+# 21. WHEN WEB APP REGISTRATION SUCCEEDS
+
+Retrieve the official Firebase Web configuration.
+
+Wire production frontend configuration.
+
+Do not rewrite the auth architecture.
+
+The production config should activate the already-tested Auth implementation.
+
+Confirm the Hosting domain is authorized for Authentication.
+
+At minimum:
+
+```text
+family-tree-a4c4f.web.app
+```
+
+---
+
+# 22. ENABLE REQUIRED AUTH PROVIDERS
+
+Inspect intended authentication.
+
+If using email/password:
+
+ensure Firebase Authentication Email/Password provider is enabled.
+
+Do not enable unrelated providers without a product requirement.
+
+Verify:
+
+```text
+signup
+login
+password reset
+email verification
+```
+
+in production-compatible configuration.
+
+---
+
+# 23. FIRESTORE PRODUCTION RULE DEPLOYMENT
+
+Once production Firestore exists:
+
+deploy the tested:
+
+```text
+firestore.rules
+firestore.indexes.json
+```
+
+Do not seed production with emulator test users or fake trees.
+
+---
+
+# 24. STORAGE PRODUCTION SETUP
+
+Verify/create the intended Storage bucket.
+
+Confirm region.
+
+Deploy:
+
+```text
+storage.rules
+```
+
+Do not leave public development rules.
+
+---
+
+# 25. PRODUCTION CUTOVER GATE
+
+Do NOT deploy Hosting cutover until:
+
+```text
+Firestore rule tests PASS
+
+Storage rule tests PASS
+
+Functions tests PASS
+
+two-user isolation PASS
+
+Auth local flow PASS
+
+tree CRUD PASS
+
+relationships PASS
+
+photo uploads PASS
+
+required feature parity PASS or N/A
+```
+
+---
+
+# 26. DEPLOY
+
+When the Web App config and production Firebase resources are available:
+
+deploy:
+
+```text
+Functions
+Firestore Rules
+Firestore indexes
+Storage Rules
+Hosting
+```
+
+Use:
+
+```text
+family-tree-a4c4f
+```
+
+Do not deploy to another project.
+
+---
+
+# 27. PRODUCTION TEST
+
+Test:
+
+```text
+https://family-tree-a4c4f.web.app/
+```
+
+Using a clean extension-free browser.
+
+Required:
+
+```text
+register
+login
+auth persistence
+tree creation/load
+person CRUD
+relationships
+photo upload
+logout
+login again
+password reset
+email verification if required
+all required parity features
+```
+
+---
+
+# 28. NETWORK VERIFICATION
+
+Production must produce:
+
+```text
+REQUESTS TO RENDER: 0
+
+REQUESTS TO OLD CLOUD RUN: 0
+```
+
+Normal Firebase traffic is expected.
+
+---
+
+# 29. DO NOT DELETE CLOUD RUN UNTIL AFTER THIS TEST
+
+Keep:
+
+```text
+lineage-api
+```
+
+untouched until Firebase production is verified.
+
+Once all production tests pass, classify:
+
+```text
+CLOUD RUN LINEAGE-API:
+SAFE TO RETIRE
+```
+
+Do not automatically delete unless explicitly authorized and safe.
+
+---
+
+# 30. REQUIRED RESULT
+
+Return:
+
+```text
+================================================================
+LINEAGE — FIREBASE FINAL COMPLETION STATUS
+================================================================
+
+WEB APP:
+REGISTERED / BLOCKED BY QUOTA
+
+WEB CONFIG:
+AVAILABLE / UNAVAILABLE
+
+FIRESTORE:
+CREATED / BLOCKED
+
+FIRESTORE LOCATION:
+<actual or selected>
+
+FUNCTIONS REGION:
+<actual>
+
+EMULATOR SUITE:
+PASS / FAIL
+
+FIRESTORE ADVERSARIAL TESTS:
+PASS / FAIL
+
+STORAGE ADVERSARIAL TESTS:
+PASS / FAIL
+
+TWO-USER ISOLATION:
+PASS / FAIL
+
+FRONTEND AUTH:
+PASS / FAIL
+
+REGISTER:
+PASS / FAIL
+
+LOGIN:
+PASS / FAIL
+
+AUTH PERSISTENCE:
+PASS / FAIL
+
+PASSWORD RESET:
+PASS / FAIL
+
+EMAIL VERIFICATION:
+PASS / FAIL / N/A
+
+TREE CRUD:
+PASS / FAIL
+
+RELATIONSHIPS:
+PASS / FAIL
+
+PHOTO UPLOAD:
+PASS / FAIL
+
+SHARING:
+PASS / FAIL / N/A
+
+APPROVAL:
+PASS / FAIL / N/A
+
+PAYMENTS:
+PASS / FAIL / N/A
+
+MEMORIES:
+PASS / FAIL / N/A
+
+EVIDENCE:
+PASS / FAIL / N/A
+
+IMPORT:
+PASS / FAIL / N/A
+
+EXPORT:
+PASS / FAIL / N/A
+
+PRODUCTION DEPLOYMENT:
+PASS / NOT PERFORMED
+
+PRODUCTION SMOKE TEST:
+PASS / NOT PERFORMED
+
+REQUESTS TO RENDER:
+<number / not yet measurable>
+
+REQUESTS TO CLOUD RUN:
+<number / not yet measurable>
+
+POSTGRESQL RUNTIME DEPENDENCY:
+ZERO / REMAINS
+
+CLOUD RUN:
+SAFE TO RETIRE / NOT SAFE TO RETIRE
+
+HUMAN ACTION STILL REQUIRED:
+<only actions genuinely impossible from this environment>
+
+FINAL VERDICT:
+<concise>
+
+================================================================
+```
+
+Most importantly:
+
+**Do not treat Firebase Web App registration quota as a reason to leave emulator security testing, uploads, or feature parity unfinished.**
+
+Complete everything locally that can be completed now.

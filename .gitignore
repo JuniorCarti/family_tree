@@ -6,3 +6,12 @@ public/uploads/*
 !public/uploads/.gitkeep
 
 .env
+
+.firebase/
+.codebase-memory/
+
+# Private migration evidence, backups, and credentials must never be committed.
+migration-private/
+backups/
+*.dump
+*.backup

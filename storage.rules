@@ -1,0 +1,17 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function treeMember(uid, treeId) {
+      return firestore.get(/databases/(default)/documents/users/$(uid)).data.accountStatus == 'approved'
+        && (firestore.get(/databases/(default)/documents/trees/$(treeId)).data.ownerUid == uid
+        || firestore.get(/databases/(default)/documents/trees/$(treeId)/members/$(uid)).data.role in ['owner','admin','contributor','viewer']);
+    }
+    match /users/{uid}/trees/{treeId}/persons/{personId}/{fileName} {
+      allow read: if request.auth != null && request.auth.uid == uid && treeMember(uid, treeId);
+      allow delete: if request.auth != null && request.auth.uid == uid && treeMember(uid, treeId);
+      allow create, update: if request.auth != null && request.auth.uid == uid && treeMember(uid, treeId)
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+  }
+}
