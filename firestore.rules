@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function approved() { return signedIn() && (request.auth.token.get('superadmin', false) == true || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountStatus == 'approved'); }
+    function member(treeId) { return signedIn() && exists(/databases/$(database)/documents/trees/$(treeId)/members/$(request.auth.uid)); }
+    function owner(treeId) { return signedIn() && get(/databases/$(database)/documents/trees/$(treeId)).data.ownerUid == request.auth.uid; }
+    match /users/{uid} { allow read, write: if signedIn() && request.auth.uid == uid; }
+    match /trees/{treeId} { allow read: if approved() && (member(treeId) || owner(treeId)); allow create: if approved() && request.resource.data.ownerUid == request.auth.uid; allow update, delete: if approved() && owner(treeId); }
+    match /trees/{treeId}/members/{uid} { allow read: if approved() && (member(treeId) || owner(treeId)); allow write: if approved() && owner(treeId) && (request.resource.data.role in ['owner','admin','contributor','viewer']); }
+    match /trees/{treeId}/{sub=**} {
+      allow read: if approved() && (member(treeId) || owner(treeId));
+      allow create, update, delete: if approved() && (owner(treeId) || (member(treeId) && get(/databases/$(database)/documents/trees/$(treeId)/members/$(request.auth.uid)).data.role in ['owner','admin','contributor']));
+    }
+  }
+}
