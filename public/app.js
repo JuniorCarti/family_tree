@@ -66,10 +66,13 @@ async function api(path, opts = {}) {
     document.body.classList.add('offline-mode');
     return { queued: true, offline: true };
   }
-  const res = await fetch(`${API}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-  });
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  // Firebase Auth integration can provide an ID token without reintroducing
+  // cookies or PostgreSQL sessions. The legacy path remains compatible while
+  // the Web SDK configuration is staged for cutover.
+  const firebaseUser = window.LineageFirebaseAuth?.currentUser;
+  if (firebaseUser?.getIdToken) headers.Authorization = `Bearer ${await firebaseUser.getIdToken()}`;
+  const res = await fetch(`${API}${path}`, { ...opts, headers });
   if (res.status === 401) {
     currentUser = null;
     $('#app').classList.add('hidden');
@@ -1117,13 +1120,19 @@ $('#photoDrop').addEventListener('click', () => $('#photoInput').click());
 $('#photoInput').addEventListener('change', async () => {
   const file = $('#photoInput').files[0];
   if (!file) return;
-  const fd = new FormData();
-  fd.append('photo', file);
-  const res = await fetch(`${API}/upload`, { method: 'POST', body: fd });
-  const data = await res.json();
+  let data;
+  if (window.LineageFirebaseStorage?.upload && state.tree?.id) {
+    data = await window.LineageFirebaseStorage.upload(file, state.tree.id, modalContext.editingId);
+  } else {
+    const fd = new FormData();
+    fd.append('photo', file);
+    const res = await fetch(`${API}/upload`, { method: 'POST', body: fd });
+    data = await res.json();
+  }
   if (data.url) {
     $('#photoPreview').src = data.url;
     $('#photoPreview').dataset.url = data.url;
+    $('#photoPreview').dataset.path = data.path || '';
     $('#photoPreview').classList.remove('hidden');
     $('#photoPlaceholder').classList.add('hidden');
   }
@@ -1175,6 +1184,7 @@ $('#personForm').addEventListener('submit', async (e) => {
         birth_place: $('#f_birth_place').value.trim() || null,
         notes: $('#f_notes').value.trim() || null,
         photo_url: $('#photoPreview').dataset.url || null,
+        photo_path: $('#photoPreview').dataset.path || null,
       };
       if (!payload.first_name) return;
       const person = await api('/persons', { method: 'POST', body: JSON.stringify(payload) });
@@ -1193,6 +1203,7 @@ $('#personForm').addEventListener('submit', async (e) => {
         birth_place: $('#f_birth_place').value.trim() || null,
         notes: $('#f_notes').value.trim() || null,
         photo_url: $('#photoPreview').dataset.url || null,
+        photo_path: $('#photoPreview').dataset.path || null,
       };
       if (!payload.first_name) return;
       await api(`/persons/${personId}`, { method: 'PUT', body: JSON.stringify(payload) });
@@ -1379,7 +1390,9 @@ async function loadApprovalAccess() {
 
   const form = $('#paymentProofForm');
   const review = $('#paymentReviewState');
-  const needsVerification = !access.email_verified_at;
+  const firebaseUser = window.LineageFirebaseAuth?.currentUser;
+  const isPasswordProvider = Boolean(firebaseUser?.email && firebaseUser.providerData?.some((provider) => provider.providerId === 'password'));
+  const needsVerification = isPasswordProvider && !firebaseUser.emailVerified;
   $('#verificationGate').classList.toggle('hidden', !needsVerification);
   form.classList.toggle('hidden', needsVerification || access.account_status === 'payment_submitted' || access.account_status === 'approved');
   review.className = 'hidden payment-review-state';
@@ -1655,6 +1668,7 @@ $('#paymentProofForm').addEventListener('submit', async (event) => {
 
 $('#refreshApprovalBtn').addEventListener('click', async () => {
   try {
+    if (window.LineageFirebaseAuthApi?.refresh) await window.LineageFirebaseAuthApi.refresh();
     await refreshApprovalStatus();
   } catch (error) {
     showApprovalMessage(error.message);
@@ -1663,11 +1677,13 @@ $('#refreshApprovalBtn').addEventListener('click', async () => {
 
 $('#resendVerificationBtn').addEventListener('click', async () => {
   try {
-    const response = await api('/auth/resend-verification', {
-      method: 'POST',
-      body: JSON.stringify({ email: currentUser?.email })
-    });
-    showApprovalMessage(response.message, 'success');
+    if (window.LineageFirebaseAuthApi?.verifyEmail) {
+      await window.LineageFirebaseAuthApi.verifyEmail();
+      showApprovalMessage('Verification email sent. Check your inbox and spam folder.', 'success');
+    } else {
+      const response = await api('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email: currentUser?.email }) });
+      showApprovalMessage(response.message, 'success');
+    }
   } catch (error) {
     showApprovalMessage(error.message);
   }
@@ -1678,7 +1694,8 @@ $('#approvalLogoutBtn').addEventListener('click', async () => {
     closePublicHelp();
     return;
   }
-  await api('/auth/logout', { method: 'POST' }).catch(() => {});
+  if (window.LineageFirebaseAuthApi) await window.LineageFirebaseAuthApi.signOut().catch(() => {});
+  else await api('/auth/logout', { method: 'POST' }).catch(() => {});
   window.location.reload();
 });
 
@@ -1835,7 +1852,9 @@ $('#resetForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   try {
     $('#resetSubmitBtn').disabled = true;
-    if (resetToken) {
+    if (window.LineageFirebaseAuthApi && !resetToken) {
+      await window.LineageFirebaseAuthApi.resetPassword($('#resetIdentifier').value.trim());
+    } else if (resetToken) {
       await api('/auth/reset-password', {
         method: 'POST',
         body: JSON.stringify({ token: resetToken, new_password: $('#resetPassword').value })
@@ -1862,6 +1881,37 @@ $('#resetForm').addEventListener('submit', async (event) => {
   }
 });
 
+let phoneConfirmation = null;
+let phoneVerifier = null;
+async function finishFirebaseProviderLogin(credential) {
+  const user = credential?.user || window.LineageFirebaseAuth?.currentUser;
+  if (!user) throw new Error('Authentication did not complete.');
+  await api('/auth/profile', { method: 'POST', body: JSON.stringify({ family_name: $('#authFamilyName').value.trim(), phone_number: user.phoneNumber || undefined }) });
+  const session = await api('/auth/session');
+  const unlocked = showAuthenticatedApp(session.context || session);
+  if (unlocked) await loadTree();
+}
+$('#googleAuthBtn')?.addEventListener('click', async () => {
+  try { await finishFirebaseProviderLogin(await window.LineageFirebaseAuthApi.signInGoogle()); }
+  catch (error) { $('#authError').textContent = error.message; $('#authError').classList.remove('hidden'); }
+});
+$('#phoneAuthBtn')?.addEventListener('click', async () => {
+  try {
+    if (!window.LineageFirebaseAuthApi?.createRecaptcha) throw new Error('Phone sign-in is not available.');
+    if (!phoneVerifier) phoneVerifier = window.LineageFirebaseAuthApi.createRecaptcha('phoneRecaptcha');
+    let phone = $('#phoneAuthNumber').value.trim().replace(/[\s()-]/g, '');
+    if (/^07\d{8}$/.test(phone)) phone = `+254${phone.slice(1)}`;
+    if (/^7\d{8}$/.test(phone)) phone = `+254${phone}`;
+    if (!/^\+[1-9]\d{7,14}$/.test(phone)) throw new Error('Enter a valid phone number, for example +254712345678.');
+    phoneConfirmation = await window.LineageFirebaseAuthApi.signInPhone(phone, phoneVerifier);
+    $('#phoneCodeRow').classList.remove('hidden'); $('#phoneVerifyBtn').classList.remove('hidden'); $('#phoneAuthBtn').classList.add('hidden');
+  } catch (error) { $('#authError').textContent = error.message; $('#authError').classList.remove('hidden'); }
+});
+$('#phoneVerifyBtn')?.addEventListener('click', async () => {
+  try { await finishFirebaseProviderLogin(await phoneConfirmation.confirm($('#phoneAuthCode').value.trim())); }
+  catch (error) { $('#authError').textContent = error.message; $('#authError').classList.remove('hidden'); }
+});
+
 $('#authForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   const email = $('#authEmail').value.trim();
@@ -1876,6 +1926,20 @@ $('#authForm').addEventListener('submit', async (event) => {
   }
 
   try {
+    if (window.LineageFirebaseAuthApi) {
+      if (isLoginMode) {
+        await window.LineageFirebaseAuthApi.signIn(email, password);
+      } else {
+        const credential = await window.LineageFirebaseAuthApi.signUp(email, password);
+        if (family_name || credential?.user) await api('/auth/profile', { method: 'POST', body: JSON.stringify({ family_name }) });
+        await window.LineageFirebaseAuthApi.verifyEmail().catch(() => {});
+      }
+      const session = await api('/auth/session');
+      const context = session.context || session;
+      const unlocked = showAuthenticatedApp(context);
+      if (unlocked) await loadTree();
+      return;
+    }
     const url = isLoginMode ? '/auth/login' : '/auth/signup';
     const body = isLoginMode
       ? { email, password }
@@ -1903,9 +1967,13 @@ $('#authForm').addEventListener('submit', async (event) => {
 });
 
 $('#logoutBtn').addEventListener('click', async () => {
-  await api('/auth/logout', { method: 'POST' }).catch(() => {});
+  if (window.LineageFirebaseAuthApi) { await window.LineageFirebaseAuthApi.signOut().catch(() => {}); window.location.reload(); return; }
+  if (window.LineageFirebaseAuthApi) await window.LineageFirebaseAuthApi.signOut().catch(() => {});
+  else await api('/auth/logout', { method: 'POST' }).catch(() => {});
   window.location.reload();
 });
+
+$('#bootRetryBtn').addEventListener('click', () => window.location.reload());
 
 function showPrivacyMessage(message, type = 'error') {
   const element = $('#privacyMessage');
@@ -1973,6 +2041,7 @@ $('#deleteAccountForm').addEventListener('submit', async (event) => {
 });
 
 async function initializeApp() {
+  if (window.LineageFirebaseReady) await window.LineageFirebaseReady;
   if (shareToken && window.LineageExplorer) {
     await window.LineageExplorer.loadSharedTree(shareToken);
     return;
@@ -2026,11 +2095,17 @@ async function initializeApp() {
     }
     if (unlocked) await loadTree();
   } catch (error) {
-    if (error.message !== 'Unauthorized') console.warn(error.message);
+    if (error.message !== 'Unauthorized') {
+      console.warn('Application startup failed:', error);
+      window.LineageBoot.showStartupFailure(document);
+    }
   }
 }
 
-initializeApp();
+initializeApp().catch((error) => {
+  console.warn('Application startup failed:', error);
+  window.LineageBoot.showStartupFailure(document);
+});
 /* ========================================================================= */
 // Duplicates Modal Logic
 /* ========================================================================= */
