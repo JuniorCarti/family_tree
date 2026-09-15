@@ -64,13 +64,13 @@ When changing the FAQ:
 
 ## Superadmin bootstrap
 
-Superadmins are configured through a comma-separated environment variable:
+Superadmins are bootstrapped by an explicit Firebase Auth UID. Do not authorize by email at runtime:
 
 ```env
-SUPERADMIN_EMAILS=owner@example.com,backup@example.com
+SUPERADMIN_UID=<Firebase Auth UID>
 ```
 
-A matching account is marked as a superadmin and approved during startup or signup. Removing an email from the variable does not silently demote an existing superadmin; role removal should be a deliberate database/administrative operation.
+Run `SUPERADMIN_UID=<uid> npm run bootstrap:superadmin` after the intended account signs in. The script sets the trusted `superadmin` custom claim and an approved profile. Runtime authorization uses the claim/UID, never a submitted email string.
 
 At least one controlled email must be configured before enabling the approval gate in production.
 
