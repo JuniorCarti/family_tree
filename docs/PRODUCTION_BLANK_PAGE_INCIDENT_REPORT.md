@@ -1,6 +1,6 @@
 # Production Blank Page Incident Report
 
-Incident date: 2026-09-14 (Africa/Nairobi)  
+Incident date: 2026-09-14 (Africa/Nairobi)
 Production URL: https://family-tree-a4c4f.web.app/
 
 ## Executive Summary
